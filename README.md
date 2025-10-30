@@ -14,9 +14,30 @@ Geology application to quicky analyze fault juxtaposition for single faults by c
 
 ## Installation
 
-If you don't already have python installed on your system, it is recommended to use uv for installing the application and dependencies. However, you can also use pip if this is preferred.
+### Quick Setup (Recommended)
 
-Installation using uv:
+If you clone this repository, you can use the automated setup scripts:
+
+**For Windows:**
+```cmd
+setup.bat
+```
+
+**For Linux/macOS:**
+```bash
+./setup.sh
+```
+
+These scripts will:
+- Check if `uv` is installed
+- Install all required dependencies automatically
+- Set up the virtual environment
+- Install platform-specific dependencies (Windows clipboard support, etc.)
+
+### Manual Installation
+
+#### Using uv (Recommended)
+
 This guide explains how to install python using uv, create an application folder and install dependencies for the application. If you already have installed python using uv, step 1 and 2 can be skipped.
 More information abut installing python using uv can be found at the Equinor wiki. 
 
@@ -80,8 +101,24 @@ uv run EFA_juxtaposition_v0p9p6.py
 ### Creating a Desktop Shortcut
 You can create a shortcut to either batch file and copy it to your desktop for easy access.
 
+### Using the Repository Setup
 
-Installation using pip
+If you've cloned this repository and have `pyproject.toml`, you can also run:
+
+```cmd
+# Install dependencies
+uv sync
+
+# Run the application
+uv run python efa_juxtaposition_app/EFA_juxtaposition_v0p9p6.py
+```
+
+Or install with Windows-specific dependencies:
+```cmd
+uv sync --extra windows
+```
+
+#### Installation using pip
 
 1. Ensure Python 3.x is installed
 2. Install required dependencies:

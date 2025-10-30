@@ -1,0 +1,131 @@
+[project]
+name = "efa-juxtaposition-analysis"
+version = "0.9.6"
+description = "Geology application to quickly analyze fault juxtaposition for single faults by creating throw profiles and juxtaposition (Allan) diagrams"
+authors = [
+    {name = "John-Are Hansen", email = "jareh@equinor.com"}
+]
+readme = "README.md"
+license = {text = "GPL-3.0-or-later"}
+requires-python = ">=3.8"
+keywords = ["geology", "fault-analysis", "juxtaposition", "petrel", "geoscience"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Visualization",
+]
+
+dependencies = [
+    "numpy>=1.21.0",
+    "pandas>=1.3.0",
+    "matplotlib>=3.5.0",
+    "scipy>=1.7.0",
+    "shapely>=1.8.0",
+    "pillow>=8.0.0",  # For PIL Image support
+]
+
+[project.optional-dependencies]
+# Windows-specific dependencies for clipboard functionality
+windows = [
+    "pywin32>=227",  # For win32clipboard support on Windows
+]
+
+# Development dependencies
+dev = [
+    "pytest>=6.0",
+    "pytest-cov>=2.0",
+    "black>=21.0",
+    "flake8>=3.8",
+    "mypy>=0.800",
+]
+
+# All optional dependencies
+all = [
+    "efa-juxtaposition-analysis[windows,dev]"
+]
+
+[project.urls]
+Homepage = "https://github.com/equinor/efa_juxtaposition_analysis"
+Repository = "https://github.com/equinor/efa_juxtaposition_analysis"
+Issues = "https://github.com/equinor/efa_juxtaposition_analysis/issues"
+Documentation = "https://github.com/equinor/efa_juxtaposition_analysis/blob/main/README.md"
+
+[project.scripts]
+efa-juxtaposition = "efa_juxtaposition_app.EFA_juxtaposition_v0p9p6:main"
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["efa_juxtaposition_app*"]
+
+[tool.setuptools.package-data]
+"efa_juxtaposition_app" = ["test_data/*"]
+
+[tool.uv]
+# UV-specific configuration
+dev-dependencies = [
+    "pytest>=6.0",
+    "pytest-cov>=2.0",
+    "black>=21.0",
+    "flake8>=3.8",
+    "mypy>=0.800",
+]
+
+[tool.black]
+line-length = 88
+target-version = ['py38']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+
+[[tool.mypy.overrides]]
+module = [
+    "matplotlib.*",
+    "pandas.*", 
+    "numpy.*",
+    "scipy.*",
+    "shapely.*",
+    "PIL.*",
+    "win32clipboard.*",
+]
+ignore_missing_imports = true
