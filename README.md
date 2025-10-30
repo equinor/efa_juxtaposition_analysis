@@ -14,10 +14,10 @@ Geology application to quicky analyze fault juxtaposition for single faults by c
 
 ## Installation
 
-If you don't already have python installed on your system, it is reccomende to use uv for installing the application and dependencies. However, you can also use pip if this is preferred.
+If you don't already have python installed on your system, it is recommended to use uv for installing the application and dependencies. However, you can also use pip if this is preferred.
 
 Installation using uv:
-This guide explains how to install python using uv, create an application folder and install dependencies for the application. If you already have installad python using uv, step  1 and 2 can be skipped.
+This guide explains how to install python using uv, create an application folder and install dependencies for the application. If you already have installed python using uv, step 1 and 2 can be skipped.
 More information abut installing python using uv can be found at the Equinor wiki. 
 
 1. Open cmd and type or copy/paste:
@@ -47,7 +47,14 @@ More information abut installing python using uv can be found at the Equinor wik
    uv add numpy pandas matplotlib scipy shapely
    ```
 
-6. Downlaod the application file .py and .bat file from GitHub and copy them into your application folder.
+6. Downlaod the application file .py from GitHub and copy it into your application folder. The application can now be launched using cmd, type or copy/paste:
+```
+c:\Appl\efa_uv_app\.venv\Scripts\activate && cd c:\Appl\efa_uv_app\ && uv run EFA_juxtaposition_v0p9p6.py
+```
+
+```
+cd c:\Appl\efa_uv_app\ && uv run EFA_juxtaposition_v0p9p6.py
+```
 
 The application can now be launched by double-clicking the .bat file. A shortcut to the .bat file can also be made, and copied to e.g. your desktop.
 
