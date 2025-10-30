@@ -8,16 +8,18 @@ Before starting, ensure you have:
 - Git installed on your system
 - Internet connection for downloading dependencies
 
-## Quick Setup (Recommended)
+## Installation Options
 
-### 1. Clone the Repository
+### Option 1: Quick Setup with Git Clone (Recommended)
+
+#### 1. Clone the Repository
 
 ```bash
 git clone https://github.com/equinor/efa_juxtaposition_analysis.git
 cd efa_juxtaposition_analysis
 ```
 
-### 2. Run the Setup Script
+#### 2. Run the Setup Script
 
 **For Windows:**
 ```cmd
@@ -36,7 +38,7 @@ The setup script will automatically:
 - ✅ Install platform-specific dependencies (Windows clipboard support, etc.)
 - ✅ Verify the installation
 
-### 3. Launch the Application
+#### 3. Launch the Application
 
 After successful setup, you can launch the application using:
 
@@ -48,6 +50,145 @@ uv run python efa_juxtaposition_app/EFA_juxtaposition_v0p9p6.py
 **Option B: Using Batch Files (Windows)**
 - Double-click `efa_juxtaposition_app/EFA_juxtaposition_launcher.bat`
 - Or use the advanced launcher: `efa_juxtaposition_app/EFA_juxtaposition_launcher_advanced.bat`
+
+### Option 2: Direct Installation from GitHub (No Git Required)
+
+If you don't have Git installed or prefer not to clone the repository:
+
+#### Method A: Install as Package from GitHub
+```bash
+# Install directly from GitHub repository
+uv add git+https://github.com/equinor/efa_juxtaposition_analysis.git
+
+# Run the application
+uv run efa-juxtaposition
+```
+
+#### Method B: Download and Extract
+1. **Download the repository:**
+   - Go to https://github.com/equinor/efa_juxtaposition_analysis
+   - Click "Code" → "Download ZIP"
+   - Extract the ZIP file to your desired location
+
+2. **Navigate to the extracted folder:**
+   ```bash
+   cd efa_juxtaposition_analysis-main
+   ```
+
+3. **Install dependencies:**
+   ```bash
+   uv sync
+   ```
+
+4. **Run the application:**
+   ```bash
+   uv run python efa_juxtaposition_app/EFA_juxtaposition_v0p9p6.py
+   ```
+
+### Option 3: Manual Download of Files (Minimal Setup)
+
+If you only need the core application files:
+
+#### 1. Create a project directory:
+```bash
+mkdir efa_juxtaposition
+cd efa_juxtaposition
+uv init .
+```
+
+#### 2. Add dependencies:
+```bash
+uv add numpy pandas matplotlib scipy shapely pillow
+```
+
+#### 3. Download the main Python file:
+- Go to https://github.com/equinor/efa_juxtaposition_analysis/blob/main/efa_juxtaposition_app/EFA_juxtaposition_v0p9p6.py
+- Click "Raw" and save the file to your project directory
+
+#### 4. Run the application:
+```bash
+uv run python EFA_juxtaposition_v0p9p6.py
+```
+
+### Option 4: Using uv with Remote Execution
+
+Run the application directly from GitHub without local installation:
+
+```bash
+# Create a temporary project
+uv init temp_efa_project
+cd temp_efa_project
+
+# Add dependencies
+uv add numpy pandas matplotlib scipy shapely pillow
+
+# Download and run in one step
+curl -sSL https://raw.githubusercontent.com/equinor/efa_juxtaposition_analysis/main/efa_juxtaposition_app/EFA_juxtaposition_v0p9p6.py -o EFA_juxtaposition.py
+uv run python EFA_juxtaposition.py
+```
+
+### Option 5: Using uv Scripts (Advanced)
+
+Create a standalone script that can be run anywhere:
+
+#### 1. Create a script file `run_efa.py`:
+```python
+#!/usr/bin/env python
+"""
+EFA Juxtaposition Analysis Runner
+Downloads and runs the application with proper dependencies
+"""
+import subprocess
+import sys
+import urllib.request
+import os
+
+def main():
+    # Ensure we have uv
+    try:
+        subprocess.run(["uv", "--version"], check=True, capture_output=True)
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        print("uv is not installed. Please install it first:")
+        print("Windows: winget install --id=astral-sh.uv -e")
+        print("Unix: curl -LsSf https://astral.sh/uv/install.sh | sh")
+        sys.exit(1)
+    
+    # Create temp directory
+    os.makedirs("temp_efa", exist_ok=True)
+    os.chdir("temp_efa")
+    
+    # Initialize project if needed
+    if not os.path.exists("pyproject.toml"):
+        subprocess.run(["uv", "init", "."], check=True)
+        subprocess.run(["uv", "add", "numpy", "pandas", "matplotlib", "scipy", "shapely", "pillow"], check=True)
+    
+    # Download application if needed
+    if not os.path.exists("EFA_juxtaposition.py"):
+        url = "https://raw.githubusercontent.com/equinor/efa_juxtaposition_analysis/main/efa_juxtaposition_app/EFA_juxtaposition_v0p9p6.py"
+        urllib.request.urlretrieve(url, "EFA_juxtaposition.py")
+    
+    # Run application
+    subprocess.run(["uv", "run", "python", "EFA_juxtaposition.py"])
+
+if __name__ == "__main__":
+    main()
+```
+
+#### 2. Run the script:
+```bash
+python run_efa.py
+```
+
+### Comparison of Methods
+
+| Method | Pros | Cons | Best For |
+|--------|------|------|----------|
+| **Git Clone** | Full repository, easy updates, includes test data | Requires Git | Developers, regular users |
+| **Direct GitHub Install** | Simple one-liner | Less control over versions | Quick testing |
+| **Download ZIP** | No Git required, full repository | Manual updates | Users without Git |
+| **Manual Download** | Minimal footprint | Missing extras (test data, launchers) | Minimal installations |
+| **Remote Execution** | No local storage | Requires internet each time | One-time usage |
+| **uv Scripts** | Automated setup | More complex | Advanced users |
 
 ## Manual Setup Instructions
 

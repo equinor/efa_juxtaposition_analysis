@@ -64,6 +64,9 @@ Documentation = "https://github.com/equinor/efa_juxtaposition_analysis/blob/main
 [project.scripts]
 efa-juxtaposition = "efa_juxtaposition_app.EFA_juxtaposition_v0p9p6:main"
 
+[project.gui-scripts]
+efa-juxtaposition-gui = "efa_juxtaposition_app.EFA_juxtaposition_v0p9p6:main"
+
 [build-system]
 requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"

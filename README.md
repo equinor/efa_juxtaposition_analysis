@@ -16,6 +16,7 @@ Geology application to quicky analyze fault juxtaposition for single faults by c
 
 ### Quick Setup (Recommended)
 
+**Option 1: Clone Repository**
 If you clone this repository, you can use the automated setup scripts:
 
 **For Windows:**
@@ -28,11 +29,30 @@ setup.bat
 ./setup.sh
 ```
 
+**Option 2: Direct Installation (No Git Required)**
+
+Download and run the installer script:
+```bash
+# Download the installer
+curl -sSL https://raw.githubusercontent.com/equinor/efa_juxtaposition_analysis/main/install_efa.py -o install_efa.py
+
+# Run the installer
+python install_efa.py
+```
+
+**Option 3: Install as uv Tool**
+```bash
+uv tool install git+https://github.com/equinor/efa_juxtaposition_analysis.git
+efa-juxtaposition  # Run the application
+```
+
 These scripts will:
 - Check if `uv` is installed
 - Install all required dependencies automatically
 - Set up the virtual environment
 - Install platform-specific dependencies (Windows clipboard support, etc.)
+
+📖 **For detailed installation options (including methods without Git), see [SETUP.md](SETUP.md)**
 
 ### Manual Installation
 
