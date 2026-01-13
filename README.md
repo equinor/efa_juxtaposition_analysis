@@ -87,7 +87,7 @@ More information abut installing python using uv can be found at the Equinor wik
 
 5. Install application dependencies, in cmd type or copy/paste:
    ```
-   uv add numpy pandas matplotlib scipy shapely
+   uv add numpy pandas matplotlib scipy shapely pywin32
    ```
 
 6. Download the application files from GitHub:
@@ -143,7 +143,7 @@ uv sync --extra windows
 1. Ensure Python 3.x is installed
 2. Install required dependencies:
    ```bash
-   pip install matplotlib pandas numpy scipy shapely
+   pip install matplotlib pandas numpy scipy shapely pywin32
    ```
 3. Run the application:
    ```bash
