@@ -161,49 +161,30 @@ Launch the application and use the tabbed interface to:
 
 ## Version
 
-**Version:** 0.93  
+**Version:** 1.0.0  
 **Build Date:** 2025-10-10  
-**Author:** John-Are Hansen (jareh@equinor.com)
+**Author:** John-Are Hansen
 
 ## License
 
-This program is free software: you can redistribute it and/or modify it under the terms of the **GNU General Public License** as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+This project is licensed under the MIT License.
 
-This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+Copyright (c) 2026 John-Are Hansen
 
-You should have received a copy of the GNU General Public License along with this program. If not, see [https://www.gnu.org/licenses/](https://www.gnu.org/licenses/).
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 
-### Why GPL v3.0?
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 
-The GNU General Public License v3.0 is a **copyleft** license that ensures:
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-- ✅ **Freedom to use** - Anyone can use the software for any purpose
-- ✅ **Freedom to study** - Source code is always available
-- ✅ **Freedom to modify** - Anyone can modify the software
-- ✅ **Freedom to distribute** - Anyone can distribute the original or modified versions
-- ✅ **Copyleft protection** - Any derivative works must also be GPL-licensed
-
-This guarantees that the software and all its derivatives remain free and open source forever.
-
-
+See the [LICENSE](LICENSE) file for details.
 
 ## Contributing
 
-Contributions are welcome! Since this is GPL-licensed software:
+Contributions are welcome!
 
 1. Fork the repository
 2. Make your changes
-3. Ensure your contributions are also GPL-compatible
-4. Submit a pull request
+3. Submit a pull request
 
-All contributions will be licensed under GPL v3.0.
-
-## Support
-
-For questions or support, contact: jareh@equinor.com
-
-## Copyright
-
-Copyright (C) 2025 John-Are Hansen
-
-This program comes with ABSOLUTELY NO WARRANTY. This is free software, and you are welcome to redistribute it under certain conditions as specified in the GPL v3.0 license.
+All contributions will be licensed under the MIT License.
