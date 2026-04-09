@@ -1,6 +1,6 @@
 # EFA Juxtaposition Analysis
 
-Geology application to quicky analyze fault juxtaposition for single faults by creating throw profiles and juxtaposition (Allan) diagrams.
+Fault juxtaposition analysis for single faults using throw profiles and juxtaposition (Allan) diagrams.
 
 ## Features
 
@@ -93,7 +93,7 @@ More information abut installing python using uv can be found at the Equinor wik
 6. Download the application files from GitHub:
    - [EFA_juxtaposition_v0p9p6.py](./efa_juxtaposition_app/EFA_juxtaposition_v0p9p6.py)
    - [EFA_juxtaposition_launcher.bat](./efa_juxtaposition_app/EFA_juxtaposition_launcher.bat)
-   - [EFA_juxtaposition_launcher_advanced.bat](./efa_juxtaposition_app/EFA_juxtaposition_launcher_advanced.bat)
+
    
    Copy these files into your application folder (c:\Appl\efa_uv_app\). 
 
@@ -115,7 +115,7 @@ Both batch files will:
 Alternatively, the application can be launched using cmd. Navigate to the application directory and run:
 ```cmd
 cd c:\Appl\efa_uv_app
-uv run EFA_juxtaposition_v0p9p6.py
+uv run EFA_juxtaposition_app.py
 ```
 
 ### Creating a Desktop Shortcut
@@ -130,7 +130,7 @@ If you've cloned this repository and have `pyproject.toml`, you can also run:
 uv sync
 
 # Run the application
-uv run python efa_juxtaposition_app/EFA_juxtaposition_v0p9p6.py
+uv run python efa_juxtaposition_app/EFA_juxtaposition_app.py
 ```
 
 Or install with Windows-specific dependencies:
@@ -147,7 +147,7 @@ uv sync --extra windows
    ```
 3. Run the application:
    ```bash
-   python EFA_juxtaposition_v0p93_u2.py
+   python EFA_juxtaposition_app.py
    ```
 
 ## Usage
@@ -161,15 +161,15 @@ Launch the application and use the tabbed interface to:
 
 ## Version
 
-**Version:** 1.0.0  
-**Build Date:** 2025-10-10  
+**Version:** 1.0.1  
+**Build Date:** 2026-02-19 
 **Author:** John-Are Hansen
 
 ## License
 
 This project is licensed under the MIT License.
 
-Copyright (c) 2026 John-Are Hansen
+Copyright (c) 2026 Equinor ASA
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 
