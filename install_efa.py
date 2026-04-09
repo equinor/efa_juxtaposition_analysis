@@ -6,8 +6,7 @@ Downloads and installs the application using uv without requiring git clone
 Usage:
     python install_efa.py
 
-Copyright (C) 2025 John-Are Hansen
-Licensed under GPL v3.0
+
 """
 
 import subprocess

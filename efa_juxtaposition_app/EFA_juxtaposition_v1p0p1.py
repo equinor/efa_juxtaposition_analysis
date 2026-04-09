@@ -1,23 +1,27 @@
 #!/usr/bin/env python3
 """
-EFA Juxtaposition Analysis - Geological Analysis Tool
+EFA Juxtaposition Analysis - fault displacement and zone juxtaposition analysis
 
 Copyright (C) 2025 John-Are Hansen
 
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
 
-You should have received a copy of the GNU General Public License
-along with this program.  If not, see <https://www.gnu.org/licenses/>.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
-Contact: jareh@equinor.com
 """
 
 import tkinter as tk
@@ -38,8 +42,9 @@ from scipy import interpolate
 from shapely.geometry import Polygon
 # import efa_app_functions as efa  # Functions moved to Backend section
 import matplotlib.colors as mcolors
+import warnings
 import pickle
-from PIL import Image
+from PIL import Image, ImageTk
 import io
 
 # Optional Windows clipboard support
@@ -52,13 +57,21 @@ except ImportError:
 
 
 class EFA_juxtaposition(tk.Tk):
-    VERSION = "0.9.6"
-    BUILD_DATE = "2025-10-28"
-    AUTHOR = "John-Are Hansen (jareh@equinor.com)"
+    VERSION = "1.0.1"
+    BUILD_DATE = "2026-02-19"
+    AUTHOR = "John-Are Hansen"
 
     def __init__(self):
         super().__init__()
         self.title(f"EFA Juxtaposition Analysis v{self.VERSION}")
+        
+        # Set icon if available, otherwise continue without it
+        try:
+            self.iconbitmap("help_images/efa_icon.ico")
+        except (FileNotFoundError, tk.TclError):
+            # Icon file not found or invalid - continue without icon
+            pass
+        
         self.geometry("1400x900")
         self.state('zoomed')  # Maximize window on Windows
         
@@ -67,7 +80,7 @@ class EFA_juxtaposition(tk.Tk):
         self.innfiles = []
         self.z_select = StringVar(value='Z')
         self.num_horizons = IntVar(value=1)
-        self.plot_name = StringVar(value="Analysis Plot")
+        self.plot_name = StringVar(value="Fault")
         self.width = IntVar(value=12)
         self.height = IntVar(value=6)
         self.gridlines = BooleanVar(value=False)
@@ -105,6 +118,7 @@ class EFA_juxtaposition(tk.Tk):
             'SR': "red"
         }
         self.zone_names_aliases = {}
+        self.zone_unit_colors = {}
         
         # Initialize legend sidebar references
         self.legend_sidebar_throw = None
@@ -133,6 +147,8 @@ class EFA_juxtaposition(tk.Tk):
         file_menu.add_separator()
         file_menu.add_command(label="Export All Plots...", command=self.copy_all_plots_to_files)
         file_menu.add_separator()
+        file_menu.add_command(label="Reset Application", command=self.reset_application)
+        file_menu.add_separator()
         file_menu.add_command(label="Exit", command=self.quit)
         
         # Edit menu with clipboard options
@@ -155,6 +171,14 @@ class EFA_juxtaposition(tk.Tk):
         view_menu.add_separator()
         view_menu.add_command(label="About", command=self.show_about)
         
+        # Help menu
+        help_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Help", menu=help_menu)
+        help_menu.add_command(label="User Guide", command=self.show_help)
+        help_menu.add_command(label="Keyboard Shortcuts", command=self.show_shortcuts)
+        help_menu.add_separator()
+        help_menu.add_command(label="About", command=self.show_about)
+        
         # Create main notebook for tabs
         self.notebook = ttk.Notebook(self)
         self.notebook.pack(fill='both', expand=True, padx=10, pady=10)
@@ -164,6 +188,7 @@ class EFA_juxtaposition(tk.Tk):
         self.data_manipulation_frame = ttk.Frame(self.notebook)
         self.plot_settings_frame = ttk.Frame(self.notebook)
         self.throw_profile_frame = ttk.Frame(self.notebook)
+        self.juxtaposition_unit_frame = ttk.Frame(self.notebook)
         self.juxtaposition_plot_frame = ttk.Frame(self.notebook)
         self.scenario_plot_frame = ttk.Frame(self.notebook)
         self.output_tables_frame = ttk.Frame(self.notebook)
@@ -172,9 +197,10 @@ class EFA_juxtaposition(tk.Tk):
         self.notebook.add(self.data_input_frame, text='Data Input')
         self.notebook.add(self.data_manipulation_frame, text='Data Manipulation')
         self.notebook.add(self.plot_settings_frame, text='Plot Settings')
-        self.notebook.add(self.throw_profile_frame, text='Throw Profile')
-        self.notebook.add(self.juxtaposition_plot_frame, text='Juxtaposition Plot')
-        self.notebook.add(self.scenario_plot_frame, text='Juxt. Scenario Plot')
+        self.notebook.add(self.throw_profile_frame, text='Throw Profile Plot')
+        self.notebook.add(self.juxtaposition_unit_frame, text='Zone Juxtaposition Plot')
+        self.notebook.add(self.juxtaposition_plot_frame, text='Lithology Juxtaposition Plot')
+        self.notebook.add(self.scenario_plot_frame, text='Juxtaposition Scenario Plot')
         self.notebook.add(self.output_tables_frame, text='Output Tables')
         
         # Setup each tab
@@ -182,6 +208,7 @@ class EFA_juxtaposition(tk.Tk):
         self.setup_data_manipulation_tab()
         self.setup_plot_settings_tab()
         self.setup_throw_profile_tab()
+        self.setup_juxtaposition_unit_tab()
         self.setup_juxtaposition_plot_tab()
         self.setup_scenario_plot_tab()
         self.setup_output_tables_tab()
@@ -291,6 +318,11 @@ class EFA_juxtaposition(tk.Tk):
 
         edit_win = tk.Toplevel(self)
         edit_win.title("Edit File Order")
+        try:
+            edit_win.iconbitmap("help_images/efa_icon.ico")
+        except (FileNotFoundError, tk.TclError):
+            # Icon file not found or invalid - continue without icon
+            pass
         edit_win.geometry("400x400")
 
         listbox = tk.Listbox(edit_win, selectmode=tk.SINGLE)
@@ -358,6 +390,7 @@ class EFA_juxtaposition(tk.Tk):
             return
 
         self.datadict.clear()
+        # Following reads data in Petrel points with attributes format
         for file_path in self.innfiles:
             try:
                 with open(file_path, 'r') as file:
@@ -481,17 +514,20 @@ class EFA_juxtaposition(tk.Tk):
         self.length_depth_frame = ttk.Frame(self.data_sub_notebook)
         self.shifted_data_frame = ttk.Frame(self.data_sub_notebook)
         self.mapped_data_frame = ttk.Frame(self.data_sub_notebook)
+        self.qc_plot_frame = ttk.Frame(self.data_sub_notebook)
         
         # Add sub-tabs to notebook
         self.data_sub_notebook.add(self.length_depth_frame, text='Length/Depth Data')
         self.data_sub_notebook.add(self.shifted_data_frame, text='Shifted Data')
         self.data_sub_notebook.add(self.mapped_data_frame, text='Mapped Data')
+        self.data_sub_notebook.add(self.qc_plot_frame, text='QC Plot')
         
         # Setup each sub-tab content
         self.setup_length_depth_tab()
         self.setup_shifted_data_tab()
         self.setup_mapped_data_tab()
-    
+        self.setup_qc_plot_tab()
+
     def setup_length_depth_tab(self):
         """Setup tab 1: Display fv_df and hv_df from xyz_to_length_depth"""
         # Create main container with label
@@ -537,6 +573,52 @@ class EFA_juxtaposition(tk.Tk):
                                              text="Run 'Convert to Length/Depth' to see mapped data here")
         self.mapped_initial_label.pack(pady=50)
     
+    def setup_qc_plot_tab(self):
+        """Setup tab 4: QC Plot placeholder"""
+        # Create main container with label
+        ttk.Label(self.qc_plot_frame, text="Lithology Control Plot", 
+                 font=('Arial', 12, 'bold')).pack(pady=10)
+        
+        # Placeholder for QC plot
+        #self.qc_plot_placeholder = ttk.Label(self.qc_plot_frame, 
+                                            #text="QC Plot will be displayed here after processing")
+        #self.qc_plot_placeholder.pack(pady=50)
+        
+
+
+    def setup_qc_plot(self):
+        """Generate QC plot and display in qc_plot_frame"""
+        try:
+            # Check prerequisites
+            if not hasattr(self, 'ld_dict') or self.ld_dict is None:
+                messagebox.showwarning("Warning", "No length/depth data available. Please convert data first.")
+                return
+            
+            # Clear ALL previous widgets from the frame
+            print("Clearing previous QC plot...")
+            for widget in self.qc_plot_frame.winfo_children():
+                widget.destroy()
+            
+            # Generate QC plot figure
+            print("Generating QC plot...")
+            fig_qc = self.qc_plot_method(title='Quality Control Plot')
+            print(f"QC plot generated, figure type: {type(fig_qc)}")
+            
+            # Create canvas and display in frame
+            print("Creating canvas...")
+            canvas = FigureCanvasTkAgg(fig_qc, master=self.qc_plot_frame)
+            print("Drawing canvas...")
+            canvas.draw()
+            print("Packing canvas...")
+            canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+            print("QC plot displayed successfully!")
+            
+        except Exception as e:
+            import traceback
+            error_detail = traceback.format_exc()
+            print(f"Error in setup_qc_plot: {error_detail}")
+            messagebox.showerror("Error", f"Failed to display QC plot: {str(e)}\n\nSee console for details.")
+
     def xyz_to_length_depth(self):
         """Convert XYZ data to length/depth format"""
         if not self.datadict:
@@ -549,13 +631,33 @@ class EFA_juxtaposition(tk.Tk):
             #self.fv_df, self.hv_df = ld_res2df(self.ld_dict)
             self.fv_df, self.hv_df = ld_org2df(self.ld_dict) # Added new interpolation routine for testing
             
-            # Setup horizon shift df
-            self.shift_df = horizon_shift_input(self.datadict)
-            self.shift_df['sh1'] = 0.0  # set first column to 0 as numeric
+            # Setup horizon shift df - preserve existing shift values if they exist
+            if self.shift_df is None or self.shift_df.empty:
+                # Create new shift table only if none exists
+                self.shift_df = horizon_shift_input(self.datadict)
+                self.shift_df['sh1'] = 0.0  # set first column to 0 as numeric
+            else:
+                # Shift table already exists - preserve it and update only if new horizons were added
+                existing_shift_df = self.shift_df.copy()
+                new_shift_df = horizon_shift_input(self.datadict)
+                
+                # Preserve existing shift values for horizons that still exist
+                for horizon in existing_shift_df.index:
+                    if horizon in new_shift_df.index:
+                        # Copy all shift values from existing table
+                        for col in existing_shift_df.columns:
+                            if col in new_shift_df.columns:
+                                new_shift_df.loc[horizon, col] = existing_shift_df.loc[horizon, col]
+                
+                # Update with the merged shift table
+                self.shift_df = new_shift_df
+                self.shift_df['sh1'] = self.shift_df['sh1'].fillna(0.0)  # ensure sh1 is numeric
             
             # Display results in tab 1 and tab 3
             self.display_length_depth_results()
             self.display_mapped_data_results()
+            # display qc plot
+            self.setup_qc_plot()
             
             messagebox.showinfo("Success", "Data converted to length/depth format!")
             
@@ -581,11 +683,11 @@ class EFA_juxtaposition(tk.Tk):
             
             # Display footwall data with styling
             if self.fv_df is not None:
-                create_styled_text_widget(container, self.fv_df, "Footwall Data (fv_df)")
+                create_styled_text_widget(container, self.fv_df, "Footwall Data (FW)")
             
             # Display hangingwall data with styling
             if self.hv_df is not None:
-                create_styled_text_widget(container, self.hv_df, "Hangingwall Data (hv_df)")
+                create_styled_text_widget(container, self.hv_df, "Hanging wall Data (HW)")
         else:
             ttk.Label(self.ld_scroll_frame, text="No length/depth data available").pack(pady=50)
     
@@ -608,11 +710,11 @@ class EFA_juxtaposition(tk.Tk):
             
             # Display shifted footwall data with styling
             if self.nfv_df is not None:
-                create_styled_text_widget(container, self.nfv_df, "Shifted Footwall Data (nfv_df)")
+                create_styled_text_widget(container, self.nfv_df, "Shifted Footwall Data (FW)")
             
             # Display shifted hangingwall data with styling
             if self.nhv_df is not None:
-                create_styled_text_widget(container, self.nhv_df, "Shifted Hangingwall Data (nhv_df)")
+                create_styled_text_widget(container, self.nhv_df, "Shifted Hanging wall Data (HW)")
         else:
             ttk.Label(self.shifted_scroll_frame, text="No shifted data available").pack(pady=50)
     
@@ -717,6 +819,11 @@ class EFA_juxtaposition(tk.Tk):
 
         win = tk.Toplevel(self)
         win.title("Horizon Shift Settings")
+        try:
+            win.iconbitmap("help_images/efa_icon.ico")
+        except (FileNotFoundError, tk.TclError):
+            # Icon file not found or invalid - continue without icon
+            pass
         win.geometry("800x500")
 
         frame = ttk.Frame(win)
@@ -977,7 +1084,7 @@ class EFA_juxtaposition(tk.Tk):
             return
             
         # Horizon Colors Section
-        horizon_frame = ttk.LabelFrame(self.color_scrollable_frame, text="Horizon Colors & Aliases")
+        horizon_frame = ttk.LabelFrame(self.color_scrollable_frame, text="Horizon Aliases & Colors")
         horizon_frame.pack(fill='x', padx=5, pady=5)
         
         self.horizon_alias_vars = {}
@@ -988,12 +1095,12 @@ class EFA_juxtaposition(tk.Tk):
             row_frame.pack(fill='x', padx=5, pady=2)
             
             # Horizon name
-            ttk.Label(row_frame, text=horizon[:15], width=15).pack(side='left', padx=2)
+            ttk.Label(row_frame, text=horizon[:30], width=30).pack(side='left', padx=2)
             
             # Alias entry
             alias_var = StringVar(value=self.horizon_aliases.get(horizon, horizon))
             self.horizon_alias_vars[horizon] = alias_var
-            alias_entry = ttk.Entry(row_frame, textvariable=alias_var, width=15)
+            alias_entry = ttk.Entry(row_frame, textvariable=alias_var, width=20)
             alias_entry.pack(side='left', padx=2)
             alias_entry.bind('<FocusOut>', lambda e, h=horizon: self.update_horizon_alias(h))
             alias_entry.bind('<Return>', lambda e, h=horizon: self.update_horizon_alias(h))
@@ -1026,11 +1133,12 @@ class EFA_juxtaposition(tk.Tk):
         
         # Zone Lithology Section
         if self.zone_names_aliases:
-            zone_frame = ttk.LabelFrame(self.color_scrollable_frame, text="Zone Lithology & Aliases")
+            zone_frame = ttk.LabelFrame(self.color_scrollable_frame, text="Zone Aliases, Lithology & Colors")
             zone_frame.pack(fill='x', padx=5, pady=5)
             
             self.zone_alias_vars = {}
             self.zone_lithology_vars = {}
+            self.zone_unit_color_vars = {}
             
             lithology_options = list(self.zone_lithology.keys())
             
@@ -1039,12 +1147,12 @@ class EFA_juxtaposition(tk.Tk):
                 row_frame.pack(fill='x', padx=5, pady=2)
                 
                 # Zone name
-                ttk.Label(row_frame, text=zone[:15], width=15).pack(side='left', padx=2)
+                ttk.Label(row_frame, text=zone[:30], width=40).pack(side='left', padx=2)
                 
                 # Alias entry
                 alias_var = StringVar(value=self.zone_names_aliases.get(zone, zone))
                 self.zone_alias_vars[zone] = alias_var
-                alias_entry = ttk.Entry(row_frame, textvariable=alias_var, width=15)
+                alias_entry = ttk.Entry(row_frame, textvariable=alias_var, width=20)
                 alias_entry.pack(side='left', padx=2)
                 alias_entry.bind('<FocusOut>', lambda e, z=zone: self.update_zone_alias(z))
                 alias_entry.bind('<Return>', lambda e, z=zone: self.update_zone_alias(z))
@@ -1062,11 +1170,291 @@ class EFA_juxtaposition(tk.Tk):
                 combo.pack(side='left', padx=2)
                 combo.bind('<<ComboboxSelected>>', lambda e, z=zone: self.update_zone_lithology(z))
                 
-                # Color indicator button - button to show color of selected lithlogy
-                #color = self.zone_colors.get(zone, '#CCCCCC')
-                #color_label = tk.Label(row_frame, width=3, bg=color, relief='solid', borderwidth=1)
-                #color_label.pack(side='left', padx=2)
+                # Color button - uses zone alias as key in self.zone_unit_colors
+                zone_alias = self.zone_names_aliases.get(zone, zone)
+                color = self.zone_unit_colors.get(zone_alias, '#ffffff')
+                color_var = StringVar(value=color)
+                self.zone_unit_color_vars[zone] = color_var
+                
+                color_btn = tk.Button(row_frame, width=3, relief='raised', bg=color)
+                color_btn.pack(side='left', padx=2)
+                
+                def make_zone_color_callback(z=zone, v=color_var, b=color_btn):
+                    def callback():
+                        current_color = v.get()
+                        # Use a bright color default if current color is too dark
+                        display_color = current_color if current_color not in ['#000000', '#000', 'black'] else '#ffffff'
+                        chosen = colorchooser.askcolor(color=display_color, title=f"Choose color for {z}")[1]
+                        if chosen:
+                            v.set(chosen)
+                            # Store using zone alias as key
+                            zone_alias = self.zone_names_aliases.get(z, z)
+                            self.zone_unit_colors[zone_alias] = chosen
+                            b.config(bg=chosen, activebackground=chosen)
+                            self.setup_legend_plot()  # Update legend immediately
+                    return callback
+                
+                color_btn.config(command=make_zone_color_callback())
+                
+                # Color hex display
+                ttk.Label(row_frame, textvariable=color_var, width=8, font=('Courier', 8)).pack(side='left', padx=2)
         
+        # Add horizontal lines section
+        line_frame = ttk.LabelFrame(self.color_scrollable_frame, text="Horizontal Lines Settings")
+        line_frame.pack(fill='x', padx=5, pady=5)
+        
+        # Add placeholder content inside the frame
+        info_label = ttk.Label(line_frame, text="Add horizontal reference lines to display on plots")
+        info_label.pack(padx=10, pady=5)
+
+        # Add text entry for line name, followed by number entry for line elevation and store in varialbes
+        # Add name and elevation inputs for horizontal lines 1
+        line_input_frame = ttk.Frame(line_frame)
+        line_input_frame.pack(fill='x', padx=10, pady=5)
+
+        # Line name label and entry
+        ttk.Label(line_input_frame, text="Name:").pack(side='left', padx=(0, 5))
+        if not hasattr(self, 'hline_name_var'):
+            self.hline_name_var = StringVar(value="")
+        line_name_entry = ttk.Entry(line_input_frame, textvariable=self.hline_name_var, width=20)
+        line_name_entry.pack(side='left', padx=5)
+
+        # Line elevation label and entry
+        ttk.Label(line_input_frame, text="Elevation:").pack(side='left', padx=(10, 5))
+        if not hasattr(self, 'hline_elevation_var'):
+            self.hline_elevation_var = tk.DoubleVar(value=0.0)
+        line_elevation_entry = ttk.Entry(line_input_frame, textvariable=self.hline_elevation_var, width=10)
+        line_elevation_entry.pack(side='left', padx=5)
+
+        # Line minimum x value label and entry
+        ttk.Label(line_input_frame, text="X min:").pack(side='left', padx=(10, 5))
+        if not hasattr(self, 'hline_xmin_var'):
+            self.hline_xmin_var = tk.DoubleVar(value=self.fv_df['length'].min() if self.fv_df is not None else 0.0)
+        line_xmin_entry = ttk.Entry(line_input_frame, textvariable=self.hline_xmin_var, width=10)
+        line_xmin_entry.pack(side='left', padx=5)
+
+        # Line maximum x value label and entry
+        ttk.Label(line_input_frame, text="X max:").pack(side='left', padx=(10, 5))
+        if not hasattr(self, 'hline_xmax_var'):
+            self.hline_xmax_var = tk.DoubleVar(value=self.fv_df['length'].max() if self.fv_df is not None else 0.0)
+        line_xmax_entry = ttk.Entry(line_input_frame, textvariable=self.hline_xmax_var, width=10)
+        line_xmax_entry.pack(side='left', padx=5)
+
+        # Line style drop down entry
+        ttk.Label(line_input_frame, text="Style:").pack(side='left', padx=(10, 5))
+        if not hasattr(self, 'hline_style_var'):
+            self.hline_style_var = StringVar(value="solid")
+        line_style_options = ["solid", "dashed", "dashdot", "dotted"]
+        line_style_menu = ttk.OptionMenu(line_input_frame, self.hline_style_var, self.hline_style_var.get(), *line_style_options)
+        line_style_menu.pack(side='left', padx=5)
+
+        # Line color selection button
+        if not hasattr(self, 'hline_color_var'):
+            self.hline_color_var = StringVar(value="#FF0000")  # Default to red
+        def choose_hline_color():
+            current_color = self.hline_color_var.get()
+            display_color = current_color if current_color not in ['#000000', '#000', 'black'] else '#FF0000'
+            chosen = colorchooser.askcolor(color=display_color, title="Choose color for horizontal line")[1]
+            if chosen:
+                self.hline_color_var.set(chosen)
+                hline_color_btn.config(bg=chosen, activebackground=chosen)  
+   
+
+        hline_color_btn = tk.Button(line_input_frame, text="Color", command=choose_hline_color, bg=self.hline_color_var.get(), activebackground=self.hline_color_var.get())
+        hline_color_btn.pack(side='left', padx=5)
+
+        # Add checkbox to enable/disable the horizontal line
+        if not hasattr(self, 'hline_enabled_var'):
+            self.hline_enabled_var = tk.BooleanVar(value=False)
+        hline_enabled_check = ttk.Checkbutton(line_input_frame, text="Enable", variable=self.hline_enabled_var)
+        hline_enabled_check.pack(side='left', padx=5)
+
+ # Add name and elevation inputs for horizontal lines 2
+        line_input_frame = ttk.Frame(line_frame)
+        line_input_frame.pack(fill='x', padx=10, pady=5)
+
+        # Line name label and entry
+        ttk.Label(line_input_frame, text="Name:").pack(side='left', padx=(0, 5))
+        if not hasattr(self, 'hline2_name_var'):
+            self.hline2_name_var = StringVar(value="")
+        line_name_entry = ttk.Entry(line_input_frame, textvariable=self.hline2_name_var, width=20)
+        line_name_entry.pack(side='left', padx=5)
+
+        # Line elevation label and entry
+        ttk.Label(line_input_frame, text="Elevation:").pack(side='left', padx=(10, 5))
+        if not hasattr(self, 'hline2_elevation_var'):
+            self.hline2_elevation_var = tk.DoubleVar(value=0.0)
+        line_elevation_entry = ttk.Entry(line_input_frame, textvariable=self.hline2_elevation_var, width=10)
+        line_elevation_entry.pack(side='left', padx=5)
+
+        # Line minimum x value label and entry
+        ttk.Label(line_input_frame, text="X min:").pack(side='left', padx=(10, 5))
+        if not hasattr(self, 'hline2_xmin_var'):
+            self.hline2_xmin_var = tk.DoubleVar(value=self.fv_df['length'].min() if self.fv_df is not None else 0.0)
+        line_xmin_entry = ttk.Entry(line_input_frame, textvariable=self.hline2_xmin_var, width=10)
+        line_xmin_entry.pack(side='left', padx=5)
+
+        # Line maximum x value label and entry
+        ttk.Label(line_input_frame, text="X max:").pack(side='left', padx=(10, 5))
+        if not hasattr(self, 'hline2_xmax_var'):
+            self.hline2_xmax_var = tk.DoubleVar(value=self.fv_df['length'].max() if self.fv_df is not None else 0.0)
+        line_xmax_entry = ttk.Entry(line_input_frame, textvariable=self.hline2_xmax_var, width=10)
+        line_xmax_entry.pack(side='left', padx=5)
+
+        # Line style drop down entry
+        ttk.Label(line_input_frame, text="Style:").pack(side='left', padx=(10, 5))
+        if not hasattr(self, 'hline2_style_var'):
+            self.hline2_style_var = StringVar(value="solid")
+        line_style_options = ["solid", "dashed", "dashdot", "dotted"]
+        line_style_menu = ttk.OptionMenu(line_input_frame, self.hline2_style_var, self.hline2_style_var.get(), *line_style_options)
+        line_style_menu.pack(side='left', padx=5)
+
+        # Line color selection button
+        if not hasattr(self, 'hline2_color_var'):
+            self.hline2_color_var = StringVar(value="#FF0000")  # Default to red
+        def choose_hline2_color():
+            current_color = self.hline2_color_var.get()
+            display_color = current_color if current_color not in ['#000000', '#000', 'black'] else '#FF0000'
+            chosen = colorchooser.askcolor(color=display_color, title="Choose color for horizontal line")[1]
+            if chosen:
+                self.hline2_color_var.set(chosen)
+                hline2_color_btn.config(bg=chosen, activebackground=chosen)  
+   
+
+        hline2_color_btn = tk.Button(line_input_frame, text="Color", command=choose_hline2_color, bg=self.hline2_color_var.get(), activebackground=self.hline2_color_var.get())
+        hline2_color_btn.pack(side='left', padx=5)
+
+        # Add checkbox to enable/disable the horizontal line
+        if not hasattr(self, 'hline2_enabled_var'):
+            self.hline2_enabled_var = tk.BooleanVar(value=False)
+        hline2_enabled_check = ttk.Checkbutton(line_input_frame, text="Enable", variable=self.hline2_enabled_var)
+        hline2_enabled_check.pack(side='left', padx=5)
+
+        # Add name and elevation inputs for horizontal lines 3
+        line_input_frame = ttk.Frame(line_frame)
+        line_input_frame.pack(fill='x', padx=10, pady=5)
+
+        # Line name label and entry
+        ttk.Label(line_input_frame, text="Name:").pack(side='left', padx=(0, 5))
+        if not hasattr(self, 'hline3_name_var'):
+            self.hline3_name_var = StringVar(value="")
+        line_name_entry = ttk.Entry(line_input_frame, textvariable=self.hline3_name_var, width=20)
+        line_name_entry.pack(side='left', padx=5)
+
+        # Line elevation label and entry
+        ttk.Label(line_input_frame, text="Elevation:").pack(side='left', padx=(10, 5))
+        if not hasattr(self, 'hline3_elevation_var'):
+            self.hline3_elevation_var = tk.DoubleVar(value=0.0)
+        line_elevation_entry = ttk.Entry(line_input_frame, textvariable=self.hline3_elevation_var, width=10)
+        line_elevation_entry.pack(side='left', padx=5)
+
+        # Line minimum x value label and entry
+        ttk.Label(line_input_frame, text="X min:").pack(side='left', padx=(10, 5))
+        if not hasattr(self, 'hline3_xmin_var'):
+            self.hline3_xmin_var = tk.DoubleVar(value=self.fv_df['length'].min() if self.fv_df is not None else 0.0)
+        line_xmin_entry = ttk.Entry(line_input_frame, textvariable=self.hline3_xmin_var, width=10)
+        line_xmin_entry.pack(side='left', padx=5)
+
+        # Line maximum x value label and entry
+        ttk.Label(line_input_frame, text="X max:").pack(side='left', padx=(10, 5))
+        if not hasattr(self, 'hline3_xmax_var'):
+            self.hline3_xmax_var = tk.DoubleVar(value=self.fv_df['length'].max() if self.fv_df is not None else 0.0)
+        line_xmax_entry = ttk.Entry(line_input_frame, textvariable=self.hline3_xmax_var, width=10)
+        line_xmax_entry.pack(side='left', padx=5)
+
+        # Line style drop down entry
+        ttk.Label(line_input_frame, text="Style:").pack(side='left', padx=(10, 5))
+        if not hasattr(self, 'hline3_style_var'):
+            self.hline3_style_var = StringVar(value="solid")
+        line_style_options = ["solid", "dashed", "dashdot", "dotted"]
+        line_style_menu = ttk.OptionMenu(line_input_frame, self.hline3_style_var, self.hline3_style_var.get(), *line_style_options)
+        line_style_menu.pack(side='left', padx=5)
+
+        # Line color selection button
+        if not hasattr(self, 'hline3_color_var'):
+            self.hline3_color_var = StringVar(value="#FF0000")  # Default to red
+        def choose_hline3_color():
+            current_color = self.hline3_color_var.get()
+            display_color = current_color if current_color not in ['#000000', '#000', 'black'] else '#FF0000'
+            chosen = colorchooser.askcolor(color=display_color, title="Choose color for horizontal line")[1]
+            if chosen:
+                self.hline3_color_var.set(chosen)
+                hline3_color_btn.config(bg=chosen, activebackground=chosen)  
+   
+
+        hline3_color_btn = tk.Button(line_input_frame, text="Color", command=choose_hline3_color, bg=self.hline3_color_var.get(), activebackground=self.hline3_color_var.get())
+        hline3_color_btn.pack(side='left', padx=5)
+
+        # Add checkbox to enable/disable the horizontal line
+        if not hasattr(self, 'hline3_enabled_var'):
+            self.hline3_enabled_var = tk.BooleanVar(value=False)
+        hline3_enabled_check = ttk.Checkbutton(line_input_frame, text="Enable", variable=self.hline3_enabled_var)
+        hline3_enabled_check.pack(side='left', padx=5)
+
+
+        # Add name and elevation inputs for horizontal lines 4
+        line_input_frame = ttk.Frame(line_frame)
+        line_input_frame.pack(fill='x', padx=10, pady=5)
+
+        # Line name label and entry
+        ttk.Label(line_input_frame, text="Name:").pack(side='left', padx=(0, 5))
+        if not hasattr(self, 'hline4_name_var'):
+            self.hline4_name_var = StringVar(value="")
+        line_name_entry = ttk.Entry(line_input_frame, textvariable=self.hline4_name_var, width=20)
+        line_name_entry.pack(side='left', padx=5)
+
+        # Line elevation label and entry
+        ttk.Label(line_input_frame, text="Elevation:").pack(side='left', padx=(10, 5))
+        if not hasattr(self, 'hline4_elevation_var'):
+            self.hline4_elevation_var = tk.DoubleVar(value=0.0)
+        line_elevation_entry = ttk.Entry(line_input_frame, textvariable=self.hline4_elevation_var, width=10)
+        line_elevation_entry.pack(side='left', padx=5)
+
+        # Line minimum x value label and entry
+        ttk.Label(line_input_frame, text="X min:").pack(side='left', padx=(10, 5))
+        if not hasattr(self, 'hline4_xmin_var'):
+            self.hline4_xmin_var = tk.DoubleVar(value=self.fv_df['length'].min() if self.fv_df is not None else 0.0)
+        line_xmin_entry = ttk.Entry(line_input_frame, textvariable=self.hline4_xmin_var, width=10)
+        line_xmin_entry.pack(side='left', padx=5)
+
+        # Line maximum x value label and entry
+        ttk.Label(line_input_frame, text="X max:").pack(side='left', padx=(10, 5))
+        if not hasattr(self, 'hline4_xmax_var'):
+            self.hline4_xmax_var = tk.DoubleVar(value=self.fv_df['length'].max() if self.fv_df is not None else 0.0)
+        line_xmax_entry = ttk.Entry(line_input_frame, textvariable=self.hline4_xmax_var, width=10)
+        line_xmax_entry.pack(side='left', padx=5)
+
+        # Line style drop down entry
+        ttk.Label(line_input_frame, text="Style:").pack(side='left', padx=(10, 5))
+        if not hasattr(self, 'hline4_style_var'):
+            self.hline4_style_var = StringVar(value="solid")
+        line_style_options = ["solid", "dashed", "dashdot", "dotted"]
+        line_style_menu = ttk.OptionMenu(line_input_frame, self.hline4_style_var, self.hline4_style_var.get(), *line_style_options)
+        line_style_menu.pack(side='left', padx=5)
+
+        # Line color selection button
+        if not hasattr(self, 'hline4_color_var'):
+            self.hline4_color_var = StringVar(value="#FF0000")  # Default to red
+        def choose_hline4_color():
+            current_color = self.hline4_color_var.get()
+            display_color = current_color if current_color not in ['#000000', '#000', 'black'] else '#FF0000'
+            chosen = colorchooser.askcolor(color=display_color, title="Choose color for horizontal line")[1]
+            if chosen:
+                self.hline4_color_var.set(chosen)
+                hline4_color_btn.config(bg=chosen, activebackground=chosen)  
+   
+
+        hline4_color_btn = tk.Button(line_input_frame, text="Color", command=choose_hline4_color, bg=self.hline4_color_var.get(), activebackground=self.hline4_color_var.get())
+        hline4_color_btn.pack(side='left', padx=5)
+
+        # Add checkbox to enable/disable the horizontal line
+        if not hasattr(self, 'hline4_enabled_var'):
+            self.hline4_enabled_var = tk.BooleanVar(value=False)
+        hline4_enabled_check = ttk.Checkbutton(line_input_frame, text="Enable", variable=self.hline4_enabled_var)
+        hline4_enabled_check.pack(side='left', padx=5)
+
+
+
         # Update legends if plot data is available
         if hasattr(self, 'ecolor_df') and self.ecolor_df is not None:
             self.setup_legend_plot()
@@ -1080,7 +1468,14 @@ class EFA_juxtaposition(tk.Tk):
     def update_zone_alias(self, zone):
         """Update zone alias when changed"""
         if zone in self.zone_alias_vars:
-            self.zone_names_aliases[zone] = self.zone_alias_vars[zone].get()
+            old_alias = self.zone_names_aliases.get(zone, zone)
+            new_alias = self.zone_alias_vars[zone].get()
+            self.zone_names_aliases[zone] = new_alias
+            
+            # Update the key in zone_unit_colors if it exists
+            if old_alias in self.zone_unit_colors:
+                self.zone_unit_colors[new_alias] = self.zone_unit_colors.pop(old_alias)
+            
             self.setup_legend_plot()  # Update legend immediately
             
     def update_zone_lithology(self, zone):
@@ -1107,8 +1502,17 @@ class EFA_juxtaposition(tk.Tk):
     
     def generate_plots(self):
         """Generate all plots with current settings"""
+        # Check all required data
+        if self.datadict is None or len(self.datadict) == 0:
+            messagebox.showwarning("Warning", "Please load horizon data first!")
+            return
+        
         if self.nfv_df is None or self.nhv_df is None:
             messagebox.showwarning("Warning", "Please execute horizon shift first!")
+            return
+        
+        if self.nh_list is None or len(self.nh_list) == 0:
+            messagebox.showwarning("Warning", "No horizons available. Please execute horizon shift first!")
             return
         
         try:
@@ -1124,7 +1528,7 @@ class EFA_juxtaposition(tk.Tk):
             messagebox.showinfo("Success", "All plots generated successfully! Check the plot tabs.")
             
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to generate plots: {str(e)}")
+            messagebox.showerror("Error", f"Failed to generate plots: {str(e)}\n\nPlease ensure you have:\n1. Loaded data\n2. Converted to length/depth\n3. Executed horizon shift")
     
     def setup_plot_data(self):
         """Setup color and type data for plotting"""
@@ -1139,14 +1543,14 @@ class EFA_juxtaposition(tk.Tk):
             
             # Create zone type dataframe
             zone_list = list(self.zone_names_aliases.keys())
-            print(zone_list)
+            #print(zone_list)
             self.ztype_df = pd.DataFrame({
                 'Zone': zone_list,
                 'Alias': [self.zone_names_aliases.get(z, z) for z in zone_list],
                 'Type': ['Undefined'] * len(zone_list)
             })
             self.eztype_df = self.ztype_df.copy()
-            print('exztype_df', self.eztype_df)
+            #print('exztype_df', self.eztype_df)
 
             #self.ezcolor_df = efa.zone_type_color(self.eztype_df)
 
@@ -1157,17 +1561,26 @@ class EFA_juxtaposition(tk.Tk):
                     if lithology in self.zone_lithology:
                         self.zone_colors[zone] = self.zone_lithology[lithology]
             
-            # Create zone color dataframe
+            # Create zone color dataframe with lithology type
+            lithology_types = []
+            for z in zone_list:
+                if hasattr(self, 'zone_lithology_vars') and z in self.zone_lithology_vars:
+                    lithology_types.append(self.zone_lithology_vars[z].get())
+                else:
+                    lithology_types.append('Undefined')
+            
             self.ezcolor_df = pd.DataFrame({
                 'Zone': zone_list,
                 'Alias': [self.zone_names_aliases.get(z, z) for z in zone_list],
-                'Color': [self.zone_colors.get(z, '#E76F51') for z in zone_list]
+                'Color': [self.zone_colors.get(z, '#ffffff') for z in zone_list],
+                'Lithology': lithology_types
             })
-            print('ezcolor_df', self.ezcolor_df)
+            #print('ezcolor_df', self.ezcolor_df)
     
     def setup_all_plots(self):
         """Setup all plot tabs"""
         self.setup_throw_profile_plot()
+        self.setup_juxtaposition_unit_plot()
         self.setup_juxtaposition_plot()
         self.setup_scenario_plot()
         self.setup_legend_plot()
@@ -1180,7 +1593,7 @@ class EFA_juxtaposition(tk.Tk):
         main_frame.pack(fill='both', expand=True, padx=10, pady=10)
 
         # Create legend sidebar
-        self.legend_sidebar_throw = ttk.Frame(main_frame, width=300)
+        self.legend_sidebar_throw = ttk.Frame(main_frame, width=400)
         self.legend_sidebar_throw.pack(side='left', fill='y', padx=(0, 10))
         self.legend_sidebar_throw.pack_propagate(False)
         
@@ -1201,11 +1614,19 @@ class EFA_juxtaposition(tk.Tk):
         
         self.gridvarf0 = BooleanVar(value=True)
         self.meanthrow_var = BooleanVar(value=True)
+        self.throw_leg_var = BooleanVar(value=True)
+        self.throw_invertx_var = BooleanVar(value=False)
 
         ttk.Checkbutton(controls_frame, text="Display gridlines", 
                        variable=self.gridvarf0, command=self.update_throw_plot).pack(side='left', padx=5)
         ttk.Checkbutton(controls_frame, text="Display mean throw", 
                        variable=self.meanthrow_var, 
+                       command=self.update_throw_plot).pack(side='left', padx=5)
+        ttk.Checkbutton(controls_frame, text="Display legend", 
+                       variable=self.throw_leg_var, 
+                       command=self.update_throw_plot).pack(side='left', padx=5)
+        ttk.Checkbutton(controls_frame, text="Invert X-axis", 
+                       variable=self.throw_invertx_var, 
                        command=self.update_throw_plot).pack(side='left', padx=5)
         
         self.throw_plot_frame = ttk.Frame(content_frame)
@@ -1213,8 +1634,16 @@ class EFA_juxtaposition(tk.Tk):
     
     def setup_throw_profile_plot(self):
         """Generate throw profile plot"""
-        for widget in self.throw_plot_frame.winfo_children():
-            widget.destroy()
+        # Safety check: ensure frame exists
+        if not hasattr(self, 'throw_plot_frame') or self.throw_plot_frame is None:
+            print("Warning: throw_plot_frame not available")
+            return
+        
+        try:
+            for widget in self.throw_plot_frame.winfo_children():
+                widget.destroy()
+        except:
+            pass
         
         # Close any existing figures to prevent memory leaks
         plt.close('all')
@@ -1265,6 +1694,118 @@ class EFA_juxtaposition(tk.Tk):
                 self.setup_legend_plot()
     
 
+    def setup_juxtaposition_unit_tab(self):
+        """Setup juxtaposition unit tab with legend sidebar"""
+        main_frame = ttk.Frame(self.juxtaposition_unit_frame)
+        main_frame.pack(fill='both', expand=True, padx=10, pady=10)
+        # Create legend sidebar
+        self.legend_sidebar_juxt_unit = ttk.Frame(main_frame, width=400)
+        self.legend_sidebar_juxt_unit.pack(side='left', fill='y', padx=(0, 10))
+        self.legend_sidebar_juxt_unit.pack_propagate(False)
+        # Add separator
+        separator = ttk.Separator(main_frame, orient='vertical')
+        separator.pack(side='left', fill='y', padx=5)
+        # Main plot area
+        content_frame = ttk.Frame(main_frame)
+        content_frame.pack(side='left', fill='both', expand=True)
+
+        ttk.Label(content_frame, 
+                 text='Zone juxtaposition unit analysis',
+                 font=('Arial', 12, 'bold')).pack(pady=10)
+        
+        controls_frame = ttk.Frame(content_frame)
+        controls_frame.pack(fill='x', padx=10, pady=5)
+
+        # Initialize control variables for unit plot
+        self.gridvarf_unit = BooleanVar(value=True)
+        self.fv_unit_var = BooleanVar(value=True)
+        self.hv_unit_var = BooleanVar(value=True)
+        self.fill_unit_var = BooleanVar(value=True)
+        self.orgpoints_unit = BooleanVar(value=False)
+        self.juxt_unit_leg_var = BooleanVar(value=True)
+        self.unit_invertx_var = BooleanVar(value=False)
+
+        ttk.Checkbutton(controls_frame, text="Display gridlines", 
+                       variable=self.gridvarf_unit, command=self.update_juxtaposition_unit_plot).pack(side='left', padx=5)
+        
+        ttk.Checkbutton(controls_frame, text="Display footwall", 
+                       variable=self.fv_unit_var, command=self.update_juxtaposition_unit_plot).pack(side='left', padx=5)
+        ttk.Checkbutton(controls_frame, text="Display hanging-wall", 
+                       variable=self.hv_unit_var, command=self.update_juxtaposition_unit_plot).pack(side='left', padx=5)
+        ttk.Checkbutton(controls_frame, text="Display zone colors", 
+                       variable=self.fill_unit_var, command=self.update_juxtaposition_unit_plot).pack(side='left', padx=5)
+        ttk.Checkbutton(controls_frame, text="Display original points", 
+                       variable=self.orgpoints_unit, command=self.update_juxtaposition_unit_plot).pack(side='left', padx=5)
+        ttk.Checkbutton(controls_frame, text="Display legend", 
+                       variable=self.juxt_unit_leg_var, command=self.update_juxtaposition_unit_plot).pack(side='left', padx=5)
+        ttk.Checkbutton(controls_frame, text="Invert X-axis", 
+                       variable=self.unit_invertx_var, command=self.update_juxtaposition_unit_plot).pack(side='left', padx=5)
+
+        self.juxt_unit_plot_frame = ttk.Frame(content_frame)
+        self.juxt_unit_plot_frame.pack(fill='both', expand=True, padx=10, pady=10)
+
+    def setup_juxtaposition_unit_plot(self):
+        """Generate juxtaposition unit plot"""
+        # Safety check: ensure frame exists
+        if not hasattr(self, 'juxt_unit_plot_frame') or self.juxt_unit_plot_frame is None:
+            print("Warning: juxt_unit_plot_frame not available")
+            return
+        
+        try:
+            for widget in self.juxt_unit_plot_frame.winfo_children():
+                widget.destroy()
+        except:
+            pass
+        
+        # Close any existing figures to prevent memory leaks
+        plt.close('all')
+        
+        try:
+            fig_unit = self.zone_unit_plot_method()
+            
+            # Store figure reference for clipboard copying
+            self.current_juxt_unit_fig = fig_unit
+            
+            # Create frame for plot and controls
+            plot_container = ttk.Frame(self.juxt_unit_plot_frame)
+            plot_container.pack(fill='both', expand=True)
+            
+            # Add toolbar frame with copy button
+            toolbar_frame = ttk.Frame(plot_container)
+            toolbar_frame.pack(fill='x', padx=5, pady=(2, 0))
+            
+            # Left side: Title
+            ttk.Label(toolbar_frame, text="Juxtaposition Unit Plot", 
+                     font=('Arial', 10, 'bold')).pack(side='left')
+            
+            # Right side: Copy button
+            button_frame = ttk.Frame(toolbar_frame)
+            button_frame.pack(side='right')
+            
+            ttk.Button(button_frame, text="📋 Copy to Clipboard", 
+                      command=self.copy_juxt_unit_plot_to_clipboard,
+                      style='Accent.TButton').pack(side='right', padx=(5, 0))
+            
+            canvas = FigureCanvasTkAgg(fig_unit, plot_container)
+            canvas.draw()
+            canvas.get_tk_widget().pack(fill='both', expand=True)
+            
+            toolbar = NavigationToolbar2Tk(canvas, plot_container)
+            toolbar.update()
+            
+        except Exception as e:
+            ttk.Label(self.juxt_unit_plot_frame, text=f"Error creating plot: {str(e)}").pack()
+    
+    def update_juxtaposition_unit_plot(self):
+        """Update juxtaposition unit plot when checkboxes change"""
+        if hasattr(self, 'zone_unit_colors') and self.zone_unit_colors:
+            self.setup_juxtaposition_unit_plot()
+            # Update legend as well
+            if hasattr(self, 'legend_sidebar_juxt_unit') and hasattr(self, 'ecolor_df'):
+                self.setup_legend_plot()
+
+    
+
         
     def setup_juxtaposition_plot_tab(self):
         """Setup juxtaposition plot tab with legend sidebar"""
@@ -1272,7 +1813,7 @@ class EFA_juxtaposition(tk.Tk):
         main_frame.pack(fill='both', expand=True, padx=10, pady=10)
 
         # Create legend sidebar
-        self.legend_sidebar_juxt = ttk.Frame(main_frame, width=300)
+        self.legend_sidebar_juxt = ttk.Frame(main_frame, width=400)
         self.legend_sidebar_juxt.pack(side='left', fill='y', padx=(0, 10))
         self.legend_sidebar_juxt.pack_propagate(False)
         
@@ -1296,6 +1837,8 @@ class EFA_juxtaposition(tk.Tk):
         self.hv_var = BooleanVar(value=True)
         self.fill_var = BooleanVar(value=True)
         self.orgpoints = BooleanVar(value=False)
+        self.juxt_leg_var = BooleanVar(value=True)
+        self.lith_invertx_var = BooleanVar(value=False)
 
         ttk.Checkbutton(controls_frame, text="Display gridlines", 
                        variable=self.gridvarf1, command=self.update_juxtaposition_plot).pack(side='left', padx=5)
@@ -1308,14 +1851,26 @@ class EFA_juxtaposition(tk.Tk):
                        variable=self.fill_var, command=self.update_juxtaposition_plot).pack(side='left', padx=5)
         ttk.Checkbutton(controls_frame, text="Display original points", 
                        variable=self.orgpoints, command=self.update_juxtaposition_plot).pack(side='left', padx=5)
+        ttk.Checkbutton(controls_frame, text="Display legend", 
+                       variable=self.juxt_leg_var, command=self.update_juxtaposition_plot).pack(side='left', padx=5)
+        ttk.Checkbutton(controls_frame, text="Invert X-axis", 
+                       variable=self.lith_invertx_var, command=self.update_juxtaposition_plot).pack(side='left', padx=5)
 
         self.juxt_plot_frame = ttk.Frame(content_frame)
         self.juxt_plot_frame.pack(fill='both', expand=True, padx=10, pady=10)
     
     def setup_juxtaposition_plot(self):
         """Generate juxtaposition plot"""
-        for widget in self.juxt_plot_frame.winfo_children():
-            widget.destroy()
+        # Safety check: ensure frame exists
+        if not hasattr(self, 'juxt_plot_frame') or self.juxt_plot_frame is None:
+            print("Warning: juxt_plot_frame not available")
+            return
+        
+        try:
+            for widget in self.juxt_plot_frame.winfo_children():
+                widget.destroy()
+        except:
+            pass
         
         # Close any existing figures to prevent memory leaks
         plt.close('all')
@@ -1370,7 +1925,7 @@ class EFA_juxtaposition(tk.Tk):
         main_frame.pack(fill='both', expand=True, padx=10, pady=10)
 
         # Create legend sidebar
-        self.legend_sidebar_scenario = ttk.Frame(main_frame, width=300)
+        self.legend_sidebar_scenario = ttk.Frame(main_frame, width=400)
         self.legend_sidebar_scenario.pack(side='left', fill='y', padx=(0, 10))
         self.legend_sidebar_scenario.pack_propagate(False)
         
@@ -1395,6 +1950,8 @@ class EFA_juxtaposition(tk.Tk):
         self.apex_var = BooleanVar(value=True)
         self.apexid_var = BooleanVar(value=False)
         self.orgpoints2 = BooleanVar(value=False)
+        self.scenario_leg_var = BooleanVar(value=True)
+        self.scen_invertx_var = BooleanVar(value=False)
 
         ttk.Checkbutton(controls_frame, text="Display gridlines", 
                        variable=self.gridvarf2, command=self.update_scenario_plot).pack(side='left', padx=5)
@@ -1409,6 +1966,10 @@ class EFA_juxtaposition(tk.Tk):
                        variable=self.apexid_var, command=self.update_scenario_plot).pack(side='left', padx=5)
         ttk.Checkbutton(controls_frame, text="Display original points",
                         variable=self.orgpoints2, command=self.update_scenario_plot).pack(side='left', padx=5)
+        ttk.Checkbutton(controls_frame, text="Display legend",
+                        variable=self.scenario_leg_var, command=self.update_scenario_plot).pack(side='left', padx=5)
+        ttk.Checkbutton(controls_frame, text="Invert X-axis", 
+                       variable=self.scen_invertx_var, command=self.update_scenario_plot).pack(side='left', padx=5)
 
         self.scenario_plot_frame_inner = ttk.Frame(content_frame)
         self.scenario_plot_frame_inner.pack(fill='both', expand=True, padx=10, pady=10)
@@ -1418,10 +1979,25 @@ class EFA_juxtaposition(tk.Tk):
     
     def setup_scenario_plot(self):
         """Generate scenario plot"""
-        for widget in self.scenario_plot_frame_inner.winfo_children():
-            widget.destroy()
-        for widget in self.warning_frame.winfo_children():
-            widget.destroy()
+        # Safety check: ensure frames exist
+        if not hasattr(self, 'scenario_plot_frame_inner') or self.scenario_plot_frame_inner is None:
+            print("Warning: scenario_plot_frame_inner not available")
+            return
+        if not hasattr(self, 'warning_frame') or self.warning_frame is None:
+            print("Warning: warning_frame not available")
+            return
+        
+        try:
+            for widget in self.scenario_plot_frame_inner.winfo_children():
+                widget.destroy()
+        except:
+            pass
+        
+        try:
+            for widget in self.warning_frame.winfo_children():
+                widget.destroy()
+        except:
+            pass
         
         # Close any existing figures to prevent memory leaks
         plt.close('all')
@@ -1546,20 +2122,40 @@ class EFA_juxtaposition(tk.Tk):
 
     def setup_legend_plot(self):
         """Setup legend plot in the sidebar for all plot tabs"""
-        def populate_legend_sidebar(sidebar, ecolor_df, ezcolor_df):
-            # Clear existing widgets in sidebar
-            for widget in sidebar.winfo_children():
-                widget.destroy()
+        def populate_legend_sidebar(sidebar, legend_method, ecolor_df, ezcolor_df):
+            # Safety check: ensure sidebar exists and is valid
+            if sidebar is None:
+                return
+            
+            try:
+                # Clear existing widgets in sidebar
+                for widget in sidebar.winfo_children():
+                    widget.destroy()
+            except:
+                pass
             
             # Close any existing legend figures to prevent memory leaks
             plt.close('all')
             
             ttk.Label(sidebar, text="Legend", font=('Arial', 12, 'bold')).pack(pady=10)
             
-            if ecolor_df is not None and ezcolor_df is not None:
+            if ecolor_df is not None:
                 try:
-                    # Create legend using hlegend function
-                    legend_fig = hlegend(ecolor_df, ezcolor_df)
+                    # Create legend using the specific legend method for this plot type
+                    if legend_method == 'throw':
+                        legend_fig = self.create_throw_legend(ecolor_df)
+                    elif legend_method == 'unit':
+                        legend_fig = self.create_unit_legend(ecolor_df)
+                    elif legend_method == 'lithology':
+                        if ezcolor_df is not None:
+                            legend_fig = self.create_lithology_legend(ecolor_df, ezcolor_df)
+                        else:
+                            raise ValueError("Zone color data required for lithology legend")
+                    elif legend_method == 'scenario':
+                        legend_fig = self.create_scenario_legend(ecolor_df)
+                    else:
+                        raise ValueError(f"Unknown legend method: {legend_method}")
+                    
                     # Store reference for clipboard functionality
                     self.current_legend_fig = legend_fig
                     
@@ -1576,7 +2172,7 @@ class EFA_juxtaposition(tk.Tk):
                     canvas.draw()
                     canvas.get_tk_widget().pack(fill='both', expand=True)
                 except Exception as e:
-                    # If hlegend fails, create a simple text-based legend
+                    # If legend creation fails, create a simple text-based legend
                     ttk.Label(sidebar, text="Horizon Colors:", font=('Arial', 10, 'bold')).pack(pady=(10,5))
                     
                     # Create a frame for the legend content
@@ -1597,37 +2193,41 @@ class EFA_juxtaposition(tk.Tk):
                         name_label = ttk.Label(color_frame, text=row['Alias'])
                         name_label.pack(side='left', padx=5)
                     
-                    # Add zone lithology legend
-                    ttk.Label(sidebar, text="Zone Lithology:", font=('Arial', 10, 'bold')).pack(pady=(10,5))
-                    
-                    zone_frame = ttk.Frame(sidebar)
-                    zone_frame.pack(fill='both', padx=10, pady=5)
-                    
-                    for zone_type, color in self.zone_lithology.items():
-                        type_frame = ttk.Frame(zone_frame)
-                        type_frame.pack(fill='x', pady=2)
+                    # Add zone lithology legend if appropriate
+                    if legend_method == 'lithology' and hasattr(self, 'zone_lithology'):
+                        ttk.Label(sidebar, text="Zone Lithology:", font=('Arial', 10, 'bold')).pack(pady=(10,5))
                         
-                        # Color indicator
-                        color_label = tk.Label(type_frame, text="■", 
-                                             foreground=color, font=('Arial', 12))
-                        color_label.pack(side='left', padx=5)
+                        zone_frame = ttk.Frame(sidebar)
+                        zone_frame.pack(fill='both', padx=10, pady=5)
                         
-                        # Zone type name
-                        type_label = ttk.Label(type_frame, text=zone_type)
-                        type_label.pack(side='left', padx=5)
+                        for zone_type, color in self.zone_lithology.items():
+                            type_frame = ttk.Frame(zone_frame)
+                            type_frame.pack(fill='x', pady=2)
+                            
+                            # Color indicator
+                            color_label = tk.Label(type_frame, text="■", 
+                                                 foreground=color, font=('Arial', 12))
+                            color_label.pack(side='left', padx=5)
+                            
+                            # Zone type name
+                            type_label = ttk.Label(type_frame, text=zone_type)
+                            type_label.pack(side='left', padx=5)
             else:
                 ttk.Label(sidebar, text="No data available\nfor legend", 
                          font=('Arial', 10), foreground='gray').pack(pady=20)
 
-        # Populate legends for all plot tabs
+        # Populate legends for all plot tabs with appropriate legend methods
         if hasattr(self, 'legend_sidebar_throw') and self.ecolor_df is not None:
-            populate_legend_sidebar(self.legend_sidebar_throw, self.ecolor_df, self.ezcolor_df)
+            populate_legend_sidebar(self.legend_sidebar_throw, 'throw', self.ecolor_df, self.ezcolor_df)
+            
+        if hasattr(self, 'legend_sidebar_juxt_unit') and self.ecolor_df is not None:
+            populate_legend_sidebar(self.legend_sidebar_juxt_unit, 'unit', self.ecolor_df, self.ezcolor_df)
             
         if hasattr(self, 'legend_sidebar_juxt') and self.ecolor_df is not None:
-            populate_legend_sidebar(self.legend_sidebar_juxt, self.ecolor_df, self.ezcolor_df)
+            populate_legend_sidebar(self.legend_sidebar_juxt, 'lithology', self.ecolor_df, self.ezcolor_df)
             
         if hasattr(self, 'legend_sidebar_scenario') and self.ecolor_df is not None:
-            populate_legend_sidebar(self.legend_sidebar_scenario, self.ecolor_df, self.ezcolor_df)
+            populate_legend_sidebar(self.legend_sidebar_scenario, 'scenario', self.ecolor_df, self.ezcolor_df)
 
     def setup_output_tables_tab(self):
         """Setup output tables tab"""
@@ -1648,18 +2248,116 @@ class EFA_juxtaposition(tk.Tk):
         self.tables_notebook.add(self.footwall_frame, text='Foot-wall Data')
         self.tables_notebook.add(self.hangingwall_frame, text='Hanging-wall Data')
         
-        ttk.Button(self.output_tables_frame, text="Export Tables to CSV", 
-                  command=self.export_tables).pack(pady=10)
+        # Create button frame for export buttons
+        button_frame = ttk.Frame(self.output_tables_frame)
+        button_frame.pack(pady=10)
+        
+        ttk.Button(button_frame, text="Export Tables to CSV", 
+                  command=self.export_tables).pack(side='left', padx=5)
+        ttk.Button(button_frame, text="Export Tables to Excel", 
+                  command=self.export_tables_to_excel).pack(side='left', padx=5)
     
     def setup_output_tables_data(self):
         """Setup output tables data"""
         if hasattr(self, 'throwrange_df') and hasattr(self, 'juxtlist') and hasattr(self, 'throwarray'):
-            self.juxt_df = interpolate_throw(self.fv_df, self.juxtlist, self.throwarray)
+            self.juxt_df = interpolate_throw(self.fv_df, self.juxtlist, self.throwarray, self.ecolor_df)
             
             self.create_table_display(self.throw_stats_frame, self.throwrange_df, "Horizon Throw Statistics")
-            self.create_table_display(self.juxt_scenarios_frame, self.juxt_df, "Juxtaposition Scenarios")
+            self.create_juxtaposition_table(self.juxt_scenarios_frame, self.juxt_df, "Juxtaposition Scenarios")
             self.create_table_display(self.footwall_frame, self.nfv_df, "Foot-wall Data")
             self.create_table_display(self.hangingwall_frame, self.nhv_df, "Hanging-wall Data")
+    
+    def get_juxtaposition_color(self, fv_lith, hv_lith):
+        """Get the background color for a juxtaposition scenario based on lithology types"""
+        # Normalize lithology strings
+        fv = str(fv_lith).strip()
+        hv = str(hv_lith).strip()
+        
+        # Define color mapping based on juxtaposition scenario legend
+        # Good Res - Good Res -> green
+        if fv == 'Good Res' and hv == 'Good Res':
+            return '#90EE90'  # Light green (easier to read text)
+        
+        # Good Res - Poor Res or Poor Res - Good Res -> yellow
+        elif (fv == 'Good Res' and hv == 'Poor Res') or (fv == 'Poor Res' and hv == 'Good Res'):
+            return '#FFFF99'  # Light yellow (easier to read text)
+        
+        # Poor Res - Poor Res -> orange
+        elif fv == 'Poor Res' and hv == 'Poor Res':
+            return '#FFD699'  # Light orange (easier to read text)
+        
+        # Good Res - SR or SR - Good Res -> black background (need white text)
+        elif (fv == 'Good Res' and hv == 'SR') or (fv == 'SR' and hv == 'Good Res'):
+            return 'black'
+        
+        # Poor Res - SR or SR - Poor Res -> black background (need white text)
+        elif (fv == 'Poor Res' and hv == 'SR') or (fv == 'SR' and hv == 'Poor Res'):
+            return 'black'
+        
+        # All other scenarios -> no color
+        else:
+            return None
+    
+    def create_juxtaposition_table(self, parent_frame, dataframe, title):
+        """Create table display widget with color coding for juxtaposition scenarios"""
+        for widget in parent_frame.winfo_children():
+            widget.destroy()
+        
+        ttk.Label(parent_frame, text=title, font=('Arial', 12, 'bold')).pack(pady=10)
+        
+        tree_frame = ttk.Frame(parent_frame)
+        tree_frame.pack(fill='both', expand=True, padx=10, pady=10)
+        
+        tree = ttk.Treeview(tree_frame)
+        tree.pack(side='left', fill='both', expand=True)
+        
+        v_scrollbar = ttk.Scrollbar(tree_frame, orient='vertical', command=tree.yview)
+        v_scrollbar.pack(side='right', fill='y')
+        h_scrollbar = ttk.Scrollbar(parent_frame, orient='horizontal', command=tree.xview)
+        h_scrollbar.pack(side='bottom', fill='x')
+        
+        tree.configure(yscrollcommand=v_scrollbar.set, xscrollcommand=h_scrollbar.set)
+        
+        columns = list(dataframe.columns)
+        tree['columns'] = columns
+        tree['show'] = 'tree headings'
+        
+        # Configure column headers with FW/HW aliases for display
+        for col in columns:
+            # Create display name by replacing FV with FW and HV with HW
+            display_name = col.replace('FV_', 'FW_').replace('HV_', 'HW_')
+            tree.heading(col, text=display_name)
+            tree.column(col, width=100)
+        
+        # Define color tags for different juxtaposition scenarios
+        tree.tag_configure('good_good', background='#90EE90', foreground='black')  # Light green
+        tree.tag_configure('good_poor', background='#FFFF99', foreground='black')  # Light yellow
+        tree.tag_configure('poor_poor', background='#FFD699', foreground='black')  # Light orange
+        tree.tag_configure('res_sr', background='black', foreground='white')      # Black with white text
+        tree.tag_configure('default', background='white', foreground='black')      # Default
+        
+        # Insert data with color tags based on FV_Lith and HV_Lith
+        for index, row in dataframe.iterrows():
+            # Get lithology values if they exist
+            fv_lith = row.get('FV_Lith', '')
+            hv_lith = row.get('HV_Lith', '')
+            
+            # Determine tag based on lithology combination
+            tag = 'default'
+            fv = str(fv_lith).strip()
+            hv = str(hv_lith).strip()
+            
+            if fv == 'Good Res' and hv == 'Good Res':
+                tag = 'good_good'
+            elif (fv == 'Good Res' and hv == 'Poor Res') or (fv == 'Poor Res' and hv == 'Good Res'):
+                tag = 'good_poor'
+            elif fv == 'Poor Res' and hv == 'Poor Res':
+                tag = 'poor_poor'
+            elif ((fv == 'Good Res' or fv == 'Poor Res') and hv == 'SR') or \
+                 ((hv == 'Good Res' or hv == 'Poor Res') and fv == 'SR'):
+                tag = 'res_sr'
+            
+            tree.insert('', 'end', text=str(index), values=list(row), tags=(tag,))
     
     def create_table_display(self, parent_frame, dataframe, title):
         """Create table display widget"""
@@ -1712,6 +2410,361 @@ class EFA_juxtaposition(tk.Tk):
             
         except Exception as e:
             messagebox.showerror("Error", f"Failed to export tables: {str(e)}")
+    
+    def export_tables_to_excel(self):
+        """Export all tables to a single Excel file with multiple sheets"""
+        if not hasattr(self, 'throwrange_df'):
+            messagebox.showwarning("Warning", "No data to export! Please generate plots first.")
+            return
+        
+        # Ask user for file location
+        file_path = filedialog.asksaveasfilename(
+            title="Save Excel File",
+            defaultextension=".xlsx",
+            filetypes=[("Excel files", "*.xlsx"), ("All files", "*.*")],
+            initialfile="efa_analysis_tables.xlsx"
+        )
+        
+        if not file_path:
+            return
+        
+        # Try different Excel engines in order of preference
+        engines_to_try = ['xlsxwriter', 'openpyxl']
+        
+        for engine in engines_to_try:
+            try:
+                # Create Excel writer object with the current engine
+                with pd.ExcelWriter(file_path, engine=engine) as writer:
+                    # Write each dataframe to a different sheet
+                    self.throwrange_df.to_excel(writer, sheet_name='Throw Statistics', index=True)
+                    self.juxt_df.to_excel(writer, sheet_name='Juxtaposition Scenarios', index=True)
+                    self.nfv_df.to_excel(writer, sheet_name='Footwall Data', index=True)
+                    self.nhv_df.to_excel(writer, sheet_name='Hanging wall Data', index=True)
+                    
+                    # Auto-adjust column widths for better readability (only for xlsxwriter)
+                    if engine == 'xlsxwriter':
+                        for sheet_name in writer.sheets:
+                            worksheet = writer.sheets[sheet_name]
+                            # Get the dataframe that was written to this sheet
+                            if sheet_name == 'Throw Statistics':
+                                df = self.throwrange_df
+                            elif sheet_name == 'Juxtaposition Scenarios':
+                                df = self.juxt_df
+                            elif sheet_name == 'Footwall Data':
+                                df = self.nfv_df
+                            else:  # Hangingwall Data
+                                df = self.nhv_df
+                            
+                            # Set column widths
+                            for idx, col in enumerate(df.columns):
+                                # Get max length of column content
+                                max_len = max(
+                                    df[col].astype(str).apply(len).max(),
+                                    len(str(col))
+                                ) + 2
+                                worksheet.set_column(idx + 1, idx + 1, min(max_len, 50))
+                            # Set index column width
+                            worksheet.set_column(0, 0, 10)
+                    
+                    elif engine == 'openpyxl':
+                        # Auto-adjust column widths for openpyxl
+                        for sheet_name in writer.sheets:
+                            worksheet = writer.sheets[sheet_name]
+                            for column in worksheet.columns:
+                                max_length = 0
+                                column_letter = column[0].column_letter
+                                for cell in column:
+                                    try:
+                                        if len(str(cell.value)) > max_length:
+                                            max_length = len(str(cell.value))
+                                    except:
+                                        pass
+                                adjusted_width = min(max_length + 2, 50)
+                                worksheet.column_dimensions[column_letter].width = adjusted_width
+                
+                # If we get here, export was successful
+                messagebox.showinfo("Success", 
+                                  f"Tables exported successfully to:\n{file_path}\n\n"
+                                  f"(Using {engine} engine)")
+                return  # Exit function after successful export
+                
+            except ImportError:
+                # This engine is not available, try the next one
+                continue
+            except Exception as e:
+                # Some other error occurred with this engine
+                messagebox.showerror("Error", f"Failed to export with {engine} engine:\n{str(e)}")
+                return
+        
+        # If we get here, none of the engines worked
+        messagebox.showerror("Error", 
+                           "Excel export requires either 'xlsxwriter' or 'openpyxl' library.\n\n"
+                           "Please install one of them using:\n"
+                           "pip install xlsxwriter\n"
+                           "or\n"
+                           "pip install openpyxl")
+
+    def reset_application(self):
+        """Reset the entire application to its initial state"""
+        # Ask for confirmation
+        response = messagebox.askyesno(
+            "Reset Application",
+            "This will reset all data, plots, and settings.\n\nAre you sure you want to continue?",
+            icon='warning'
+        )
+        
+        if not response:
+            return
+        
+        try:
+            # Reset all data variables
+            self.datadict = {}
+            self.innfiles = []
+            
+            # Reset processing variables
+            self.ld_dict = None
+            self.fv_df = None
+            self.hv_df = None
+            self.nfv_df = None
+            self.nhv_df = None
+            self.nh_list = None
+            self.strike = None
+            self.dip = None
+            self.shift_df = None
+            self.color_df = None
+            self.ztype_df = None
+            self.ezcolor_df = None
+            self.ecolor_df = None
+            self.eztype_df = None
+            
+            # Reset GUI variables to defaults
+            self.z_select.set('Z')
+            self.num_horizons.set(1)
+            self.plot_name.set("Fault")
+            self.width.set(12)
+            self.height.set(6)
+            self.gridlines.set(False)
+            self.linewidth.set(1.0)
+            self.pointid.set(False)
+            self.file_format.set('Petrel_FC')
+            self.unit_xy = 'm'
+            self.unit_depth = 'm'
+            
+            # Reset color and alias management
+            self.horizon_colors = {}
+            self.horizon_aliases = {}
+            self.zone_colors = {}
+            self.zone_lithology = {
+                'Undefined': "azure",
+                'Good': "yellow",
+                'Poor': "orange", 
+                'No Res': "black",
+                'SR': "red"
+            }
+            self.zone_names_aliases = {}
+            self.zone_unit_colors = {}
+            self.zone_lithology_vars = {}  # Reset zone lithology variables
+            
+            # Reset legend sidebar references
+            self.legend_sidebar_throw = None
+            self.legend_sidebar_juxt = None
+            self.legend_sidebar_juxt_unit = None
+            self.legend_sidebar_scenario = None
+            
+            # Reset figure references
+            self.current_throw_fig = None
+            self.current_juxt_fig = None
+            self.current_juxt_unit_fig = None
+            self.current_scenario_fig = None
+            self.current_legend_fig = None
+            
+            # Clear all tabs - check if attributes exist first and handle errors gracefully
+            # Clear Data Input tab (data_display_frame)
+            if hasattr(self, 'data_display_frame'):
+                try:
+                    for widget in self.data_display_frame.winfo_children():
+                        widget.destroy()
+                except:
+                    pass
+            
+            # Clear Data Manipulation tab frames
+            if hasattr(self, 'ld_scroll_frame'):
+                try:
+                    for widget in self.ld_scroll_frame.winfo_children():
+                        widget.destroy()
+                except:
+                    pass
+            
+            if hasattr(self, 'shifted_scroll_frame'):
+                try:
+                    for widget in self.shifted_scroll_frame.winfo_children():
+                        widget.destroy()
+                except:
+                    pass
+            
+            if hasattr(self, 'mapped_scroll_frame'):
+                try:
+                    for widget in self.mapped_scroll_frame.winfo_children():
+                        widget.destroy()
+                except:
+                    pass
+            
+            # Clear Plot Settings tab
+            if hasattr(self, 'color_scrollable_frame'):
+                try:
+                    for widget in self.color_scrollable_frame.winfo_children():
+                        widget.destroy()
+                except:
+                    pass
+            
+            # Clear Throw Profile tab
+            if hasattr(self, 'throw_plot_frame'):
+                try:
+                    for widget in self.throw_plot_frame.winfo_children():
+                        widget.destroy()
+                except:
+                    pass
+            
+            # Clear Juxtaposition Unit Plot tab
+            if hasattr(self, 'juxt_unit_plot_frame'):
+                try:
+                    for widget in self.juxt_unit_plot_frame.winfo_children():
+                        widget.destroy()
+                except:
+                    pass
+            
+            # Clear Juxtaposition Plot tab
+            if hasattr(self, 'juxt_plot_frame'):
+                try:
+                    for widget in self.juxt_plot_frame.winfo_children():
+                        widget.destroy()
+                except:
+                    pass
+            
+            # Clear Scenario Plot tab (warning_frame contains the scenario plot)
+            if hasattr(self, 'warning_frame'):
+                try:
+                    for widget in self.warning_frame.winfo_children():
+                        widget.destroy()
+                except:
+                    pass
+            
+            # Clear Output Tables tab frames
+            if hasattr(self, 'throw_stats_frame'):
+                try:
+                    for widget in self.throw_stats_frame.winfo_children():
+                        widget.destroy()
+                except:
+                    pass
+            
+            if hasattr(self, 'juxt_scenarios_frame'):
+                try:
+                    for widget in self.juxt_scenarios_frame.winfo_children():
+                        widget.destroy()
+                except:
+                    pass
+            
+            # Clear file listbox in sidebar
+            if hasattr(self, 'datafiles_listbox'):
+                try:
+                    self.datafiles_listbox.delete(0, 'end')
+                except:
+                    pass
+            
+            # Clear data text display
+            if hasattr(self, 'data_text'):
+                try:
+                    self.data_text.delete('1.0', 'end')
+                except:
+                    pass
+            
+            # Re-add initial instructions to display areas
+            if hasattr(self, 'data_display_frame'):
+                try:
+                    ttk.Label(self.data_display_frame, 
+                             text='Data Preview - Loaded files will be displayed here',
+                             font=('Arial', 12, 'bold')).pack(pady=10)
+                    
+                    # Recreate the data text widget
+                    data_text_frame = ttk.Frame(self.data_display_frame)
+                    data_text_frame.pack(fill='both', expand=True, pady=10)
+                    
+                    self.data_text = tk.Text(data_text_frame, wrap=tk.WORD)
+                    data_scrollbar = ttk.Scrollbar(data_text_frame, orient='vertical', command=self.data_text.yview)
+                    self.data_text.configure(yscrollcommand=data_scrollbar.set)
+                    
+                    self.data_text.pack(side='left', fill='both', expand=True)
+                    data_scrollbar.pack(side='right', fill='y')
+                except:
+                    pass
+            
+            if hasattr(self, 'ld_scroll_frame'):
+                try:
+                    ttk.Label(self.ld_scroll_frame, 
+                             text="Length/Depth data will appear here after conversion.",
+                             font=('Arial', 10)).pack(pady=20)
+                except:
+                    pass
+            
+            if hasattr(self, 'shifted_scroll_frame'):
+                try:
+                    ttk.Label(self.shifted_scroll_frame, 
+                             text="Shifted data will appear here after executing horizon shift.",
+                             font=('Arial', 10)).pack(pady=20)
+                except:
+                    pass
+            
+            if hasattr(self, 'mapped_scroll_frame'):
+                try:
+                    ttk.Label(self.mapped_scroll_frame, 
+                             text="Mapped data will appear here after conversion.",
+                             font=('Arial', 10)).pack(pady=20)
+                except:
+                    pass
+            
+            if hasattr(self, 'throw_plot_frame'):
+                try:
+                    ttk.Label(self.throw_plot_frame, 
+                             text="Throw plot will appear here after executing horizon shift.",
+                             font=('Arial', 10)).pack(pady=20)
+                except:
+                    pass
+            
+            if hasattr(self, 'juxt_unit_plot_frame'):
+                try:
+                    ttk.Label(self.juxt_unit_plot_frame, 
+                             text="Juxtaposition unit plot will appear here after creating juxtaposition diagram.",
+                             font=('Arial', 10)).pack(pady=20)
+                except:
+                    pass
+            
+            if hasattr(self, 'juxt_plot_frame'):
+                try:
+                    ttk.Label(self.juxt_plot_frame, 
+                             text="Juxtaposition plot will appear here after creating juxtaposition diagram.",
+                             font=('Arial', 10)).pack(pady=20)
+                except:
+                    pass
+            
+            if hasattr(self, 'warning_frame'):
+                try:
+                    ttk.Label(self.warning_frame, 
+                             text="Scenario plot will appear here after creating scenario diagram.",
+                             font=('Arial', 10)).pack(pady=20)
+                except:
+                    pass
+            
+            # Refresh the color settings display if available
+            if hasattr(self, 'update_color_settings_display'):
+                try:
+                    self.update_color_settings_display()
+                except:
+                    pass
+            
+            messagebox.showinfo("Success", "Application has been reset to initial state.")
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to reset application: {str(e)}")
 
     def save_session(self):
         """Save the complete application session to a pickle file using file dialog"""
@@ -1755,6 +2808,7 @@ class EFA_juxtaposition(tk.Tk):
                 'zone_colors': self.zone_colors,
                 'zone_lithology': self.zone_lithology,
                 'zone_names_aliases': self.zone_names_aliases,
+                'zone_unit_colors': self.zone_unit_colors,
                 
                 # UI variable states
                 'z_select': self.z_select.get(),
@@ -1787,6 +2841,43 @@ class EFA_juxtaposition(tk.Tk):
                 'apex_var': getattr(self, 'apex_var', BooleanVar(value=True)).get() if hasattr(self, 'apex_var') else True,
                 'apexid_var': getattr(self, 'apexid_var', BooleanVar(value=False)).get() if hasattr(self, 'apexid_var') else False,
                 'orgpoints2': getattr(self, 'orgpoints2', BooleanVar(value=False)).get() if hasattr(self, 'orgpoints2') else False,
+                # Unit plot control variables
+                'gridvarf_unit': getattr(self, 'gridvarf_unit', BooleanVar(value=True)).get() if hasattr(self, 'gridvarf_unit') else True,
+                'fv_unit_var': getattr(self, 'fv_unit_var', BooleanVar(value=True)).get() if hasattr(self, 'fv_unit_var') else True,
+                'hv_unit_var': getattr(self, 'hv_unit_var', BooleanVar(value=True)).get() if hasattr(self, 'hv_unit_var') else True,
+                'fill_unit_var': getattr(self, 'fill_unit_var', BooleanVar(value=True)).get() if hasattr(self, 'fill_unit_var') else True,
+                'orgpoints_unit': getattr(self, 'orgpoints_unit', BooleanVar(value=False)).get() if hasattr(self, 'orgpoints_unit') else False,
+                'juxt_unit_leg_var': getattr(self, 'juxt_unit_leg_var', BooleanVar(value=True)).get() if hasattr(self, 'juxt_unit_leg_var') else True,
+                'unit_invertx_var': getattr(self, 'unit_invertx_var', BooleanVar(value=False)).get() if hasattr(self, 'unit_invertx_var') else False,
+                # Horizontal line variables
+                'hline_enabled_var': getattr(self, 'hline_enabled_var', BooleanVar(value=False)).get() if hasattr(self, 'hline_enabled_var') else False,
+                'hline2_enabled_var': getattr(self, 'hline2_enabled_var', BooleanVar(value=False)).get() if hasattr(self, 'hline2_enabled_var') else False,
+                'hline3_enabled_var': getattr(self, 'hline3_enabled_var', BooleanVar(value=False)).get() if hasattr(self, 'hline3_enabled_var') else False,
+                'hline4_enabled_var': getattr(self, 'hline4_enabled_var', BooleanVar(value=False)).get() if hasattr(self, 'hline4_enabled_var') else False,
+                'hline_elevation_var': getattr(self, 'hline_elevation_var', tk.DoubleVar(value=0.0)).get() if hasattr(self, 'hline_elevation_var') else 0.0,
+                'hline2_elevation_var': getattr(self, 'hline2_elevation_var', tk.DoubleVar(value=0.0)).get() if hasattr(self, 'hline2_elevation_var') else 0.0,
+                'hline3_elevation_var': getattr(self, 'hline3_elevation_var', tk.DoubleVar(value=0.0)).get() if hasattr(self, 'hline3_elevation_var') else 0.0,
+                'hline4_elevation_var': getattr(self, 'hline4_elevation_var', tk.DoubleVar(value=0.0)).get() if hasattr(self, 'hline4_elevation_var') else 0.0,
+                'hline_xmin_var': getattr(self, 'hline_xmin_var', tk.DoubleVar(value=0.0)).get() if hasattr(self, 'hline_xmin_var') else 0.0,
+                'hline2_xmin_var': getattr(self, 'hline2_xmin_var', tk.DoubleVar(value=0.0)).get() if hasattr(self, 'hline2_xmin_var') else 0.0,
+                'hline3_xmin_var': getattr(self, 'hline3_xmin_var', tk.DoubleVar(value=0.0)).get() if hasattr(self, 'hline3_xmin_var') else 0.0,
+                'hline4_xmin_var': getattr(self, 'hline4_xmin_var', tk.DoubleVar(value=0.0)).get() if hasattr(self, 'hline4_xmin_var') else 0.0,
+                'hline_xmax_var': getattr(self, 'hline_xmax_var', tk.DoubleVar(value=1000.0)).get() if hasattr(self, 'hline_xmax_var') else 1000.0,
+                'hline2_xmax_var': getattr(self, 'hline2_xmax_var', tk.DoubleVar(value=1000.0)).get() if hasattr(self, 'hline2_xmax_var') else 1000.0,
+                'hline3_xmax_var': getattr(self, 'hline3_xmax_var', tk.DoubleVar(value=1000.0)).get() if hasattr(self, 'hline3_xmax_var') else 1000.0,
+                'hline4_xmax_var': getattr(self, 'hline4_xmax_var', tk.DoubleVar(value=1000.0)).get() if hasattr(self, 'hline4_xmax_var') else 1000.0,
+                'hline_color_var': getattr(self, 'hline_color_var', StringVar(value='red')).get() if hasattr(self, 'hline_color_var') else 'red',
+                'hline2_color_var': getattr(self, 'hline2_color_var', StringVar(value='blue')).get() if hasattr(self, 'hline2_color_var') else 'blue',
+                'hline3_color_var': getattr(self, 'hline3_color_var', StringVar(value='green')).get() if hasattr(self, 'hline3_color_var') else 'green',
+                'hline4_color_var': getattr(self, 'hline4_color_var', StringVar(value='orange')).get() if hasattr(self, 'hline4_color_var') else 'orange',
+                'hline_style_var': getattr(self, 'hline_style_var', StringVar(value='solid')).get() if hasattr(self, 'hline_style_var') else 'solid',
+                'hline2_style_var': getattr(self, 'hline2_style_var', StringVar(value='solid')).get() if hasattr(self, 'hline2_style_var') else 'solid',
+                'hline3_style_var': getattr(self, 'hline3_style_var', StringVar(value='solid')).get() if hasattr(self, 'hline3_style_var') else 'solid',
+                'hline4_style_var': getattr(self, 'hline4_style_var', StringVar(value='solid')).get() if hasattr(self, 'hline4_style_var') else 'solid',
+                'hline_name_var': getattr(self, 'hline_name_var', StringVar(value='H-Line 1')).get() if hasattr(self, 'hline_name_var') else 'H-Line 1',
+                'hline2_name_var': getattr(self, 'hline2_name_var', StringVar(value='H-Line 2')).get() if hasattr(self, 'hline2_name_var') else 'H-Line 2',
+                'hline3_name_var': getattr(self, 'hline3_name_var', StringVar(value='H-Line 3')).get() if hasattr(self, 'hline3_name_var') else 'H-Line 3',
+                'hline4_name_var': getattr(self, 'hline4_name_var', StringVar(value='H-Line 4')).get() if hasattr(self, 'hline4_name_var') else 'H-Line 4',
             }
             
             # Save to pickle file
@@ -1844,6 +2935,7 @@ class EFA_juxtaposition(tk.Tk):
                 'No Res': "black", 'SR': "red"
             })
             self.zone_names_aliases = session_data.get('zone_names_aliases', {})
+            self.zone_unit_colors = session_data.get('zone_unit_colors', {})
             
             # Restore UI variable states
             self.z_select.set(session_data.get('z_select', 'Z'))
@@ -1889,6 +2981,139 @@ class EFA_juxtaposition(tk.Tk):
                 self.apexid_var.set(session_data.get('apexid_var', False))
             if hasattr(self, 'orgpoints2'):
                 self.orgpoints2.set(session_data.get('orgpoints2', False))
+            
+            # Restore unit plot control variables
+            if hasattr(self, 'gridvarf_unit'):
+                self.gridvarf_unit.set(session_data.get('gridvarf_unit', True))
+            if hasattr(self, 'fv_unit_var'):
+                self.fv_unit_var.set(session_data.get('fv_unit_var', True))
+            if hasattr(self, 'hv_unit_var'):
+                self.hv_unit_var.set(session_data.get('hv_unit_var', True))
+            if hasattr(self, 'fill_unit_var'):
+                self.fill_unit_var.set(session_data.get('fill_unit_var', True))
+            if hasattr(self, 'orgpoints_unit'):
+                self.orgpoints_unit.set(session_data.get('orgpoints_unit', False))
+            if hasattr(self, 'juxt_unit_leg_var'):
+                self.juxt_unit_leg_var.set(session_data.get('juxt_unit_leg_var', True))
+            if hasattr(self, 'unit_invertx_var'):
+                self.unit_invertx_var.set(session_data.get('unit_invertx_var', False))
+            
+            # Restore horizontal line variables (backwards compatible - create if they don't exist)
+            # Line 1
+            if not hasattr(self, 'hline_enabled_var'):
+                self.hline_enabled_var = tk.BooleanVar(value=False)
+            self.hline_enabled_var.set(session_data.get('hline_enabled_var', False))
+            
+            if not hasattr(self, 'hline_elevation_var'):
+                self.hline_elevation_var = tk.DoubleVar(value=0.0)
+            self.hline_elevation_var.set(session_data.get('hline_elevation_var', 0.0))
+            
+            if not hasattr(self, 'hline_xmin_var'):
+                self.hline_xmin_var = tk.DoubleVar(value=0.0)
+            self.hline_xmin_var.set(session_data.get('hline_xmin_var', 0.0))
+            
+            if not hasattr(self, 'hline_xmax_var'):
+                self.hline_xmax_var = tk.DoubleVar(value=1000.0)
+            self.hline_xmax_var.set(session_data.get('hline_xmax_var', 1000.0))
+            
+            if not hasattr(self, 'hline_color_var'):
+                self.hline_color_var = StringVar(value='red')
+            self.hline_color_var.set(session_data.get('hline_color_var', 'red'))
+            
+            if not hasattr(self, 'hline_style_var'):
+                self.hline_style_var = StringVar(value='solid')
+            self.hline_style_var.set(session_data.get('hline_style_var', 'solid'))
+            
+            if not hasattr(self, 'hline_name_var'):
+                self.hline_name_var = StringVar(value='H-Line 1')
+            self.hline_name_var.set(session_data.get('hline_name_var', 'H-Line 1'))
+            
+            # Line 2
+            if not hasattr(self, 'hline2_enabled_var'):
+                self.hline2_enabled_var = tk.BooleanVar(value=False)
+            self.hline2_enabled_var.set(session_data.get('hline2_enabled_var', False))
+            
+            if not hasattr(self, 'hline2_elevation_var'):
+                self.hline2_elevation_var = tk.DoubleVar(value=0.0)
+            self.hline2_elevation_var.set(session_data.get('hline2_elevation_var', 0.0))
+            
+            if not hasattr(self, 'hline2_xmin_var'):
+                self.hline2_xmin_var = tk.DoubleVar(value=0.0)
+            self.hline2_xmin_var.set(session_data.get('hline2_xmin_var', 0.0))
+            
+            if not hasattr(self, 'hline2_xmax_var'):
+                self.hline2_xmax_var = tk.DoubleVar(value=1000.0)
+            self.hline2_xmax_var.set(session_data.get('hline2_xmax_var', 1000.0))
+            
+            if not hasattr(self, 'hline2_color_var'):
+                self.hline2_color_var = StringVar(value='blue')
+            self.hline2_color_var.set(session_data.get('hline2_color_var', 'blue'))
+            
+            if not hasattr(self, 'hline2_style_var'):
+                self.hline2_style_var = StringVar(value='solid')
+            self.hline2_style_var.set(session_data.get('hline2_style_var', 'solid'))
+            
+            if not hasattr(self, 'hline2_name_var'):
+                self.hline2_name_var = StringVar(value='H-Line 2')
+            self.hline2_name_var.set(session_data.get('hline2_name_var', 'H-Line 2'))
+            
+            # Line 3
+            if not hasattr(self, 'hline3_enabled_var'):
+                self.hline3_enabled_var = tk.BooleanVar(value=False)
+            self.hline3_enabled_var.set(session_data.get('hline3_enabled_var', False))
+            
+            if not hasattr(self, 'hline3_elevation_var'):
+                self.hline3_elevation_var = tk.DoubleVar(value=0.0)
+            self.hline3_elevation_var.set(session_data.get('hline3_elevation_var', 0.0))
+            
+            if not hasattr(self, 'hline3_xmin_var'):
+                self.hline3_xmin_var = tk.DoubleVar(value=0.0)
+            self.hline3_xmin_var.set(session_data.get('hline3_xmin_var', 0.0))
+            
+            if not hasattr(self, 'hline3_xmax_var'):
+                self.hline3_xmax_var = tk.DoubleVar(value=1000.0)
+            self.hline3_xmax_var.set(session_data.get('hline3_xmax_var', 1000.0))
+            
+            if not hasattr(self, 'hline3_color_var'):
+                self.hline3_color_var = StringVar(value='green')
+            self.hline3_color_var.set(session_data.get('hline3_color_var', 'green'))
+            
+            if not hasattr(self, 'hline3_style_var'):
+                self.hline3_style_var = StringVar(value='solid')
+            self.hline3_style_var.set(session_data.get('hline3_style_var', 'solid'))
+            
+            if not hasattr(self, 'hline3_name_var'):
+                self.hline3_name_var = StringVar(value='H-Line 3')
+            self.hline3_name_var.set(session_data.get('hline3_name_var', 'H-Line 3'))
+            
+            # Line 4
+            if not hasattr(self, 'hline4_enabled_var'):
+                self.hline4_enabled_var = tk.BooleanVar(value=False)
+            self.hline4_enabled_var.set(session_data.get('hline4_enabled_var', False))
+            
+            if not hasattr(self, 'hline4_elevation_var'):
+                self.hline4_elevation_var = tk.DoubleVar(value=0.0)
+            self.hline4_elevation_var.set(session_data.get('hline4_elevation_var', 0.0))
+            
+            if not hasattr(self, 'hline4_xmin_var'):
+                self.hline4_xmin_var = tk.DoubleVar(value=0.0)
+            self.hline4_xmin_var.set(session_data.get('hline4_xmin_var', 0.0))
+            
+            if not hasattr(self, 'hline4_xmax_var'):
+                self.hline4_xmax_var = tk.DoubleVar(value=1000.0)
+            self.hline4_xmax_var.set(session_data.get('hline4_xmax_var', 1000.0))
+            
+            if not hasattr(self, 'hline4_color_var'):
+                self.hline4_color_var = StringVar(value='orange')
+            self.hline4_color_var.set(session_data.get('hline4_color_var', 'orange'))
+            
+            if not hasattr(self, 'hline4_style_var'):
+                self.hline4_style_var = StringVar(value='solid')
+            self.hline4_style_var.set(session_data.get('hline4_style_var', 'solid'))
+            
+            if not hasattr(self, 'hline4_name_var'):
+                self.hline4_name_var = StringVar(value='H-Line 4')
+            self.hline4_name_var.set(session_data.get('hline4_name_var', 'H-Line 4'))
             
             # Refresh all displays
             self.refresh_all_displays()
@@ -1972,6 +3197,13 @@ class EFA_juxtaposition(tk.Tk):
             self.copy_figure_to_clipboard(self.current_juxt_fig, "Juxtaposition Plot")
         else:
             messagebox.showwarning("No Plot", "No juxtaposition plot available to copy.\nPlease generate a plot first.")
+    
+    def copy_juxt_unit_plot_to_clipboard(self):
+        """Copy the current juxtaposition unit plot to clipboard"""
+        if hasattr(self, 'current_juxt_unit_fig') and self.current_juxt_unit_fig is not None:
+            self.copy_figure_to_clipboard(self.current_juxt_unit_fig, "Juxtaposition Unit Plot")
+        else:
+            messagebox.showwarning("No Plot", "No juxtaposition unit plot available to copy.\nPlease generate a plot first.")
     
     def copy_scenario_plot_to_clipboard(self):
         """Copy the current scenario plot to clipboard"""
@@ -2107,7 +3339,84 @@ class EFA_juxtaposition(tk.Tk):
             display_name = fname.split('/')[-1] if '/' in fname else fname.split('\\')[-1]
             self.datafiles_listbox.insert(tk.END, display_name)
 
-    def throw_plot_method(self, fv_df=None, hv_df=None, h_color=None, title='', figsize=(6,12), gridlines=1, linewidth=1, meanthrow=1, z_select='Z'):
+    def qc_plot_method(self, title='', figsize=(6,12), gridlines=1, linewidth=1, z_select='Z'):
+        """
+        Plot orignal footwall and hangingwall data for QC as a class method, with throw profile below
+        """
+        try:
+            # Use instance variables as defaults if not provided
+            ld_dict = self.ld_dict
+
+            if not title:
+                title = self.plot_name.get() + f' - mean strike/dip = {round(self.strike)}/{round(self.dip)}'
+            if figsize == (6,12):
+                figsize = (self.width.get(), self.height.get())
+            if gridlines == 1:
+                gridlines = self.gridvarf0.get()
+            if linewidth == 1:
+                linewidth = self.linewidth.get()
+            if z_select == 'Z':
+                z_select = self.z_select.get()
+                
+            # create two sub plots stacked vertically
+            title = 'QC Plot - ' + title
+            fig, (ax1, ax2) = plt.subplots(2, 1, figsize=figsize, sharex=True, gridspec_kw={'height_ratios': [3, 1]})
+
+            # First subplot: juxtaposition plot
+            for i in range(len(list(ld_dict.keys()))):
+                horizon_name = list(ld_dict.keys())[i]
+                print(f"Processing horizon: {horizon_name}")
+                
+                fv_length_list = ld_dict[horizon_name]['fv']['l']
+                fv_depth_list = ld_dict[horizon_name]['fv']['d']
+                hv_length_list = ld_dict[horizon_name]['hv']['l']
+                hv_depth_list = ld_dict[horizon_name]['hv']['d']
+
+                colorlist = ['blue', 'orange', 'green', 'red', 'purple', 'brown', 'pink', 'gray', 'olive', 'cyan']
+
+                horizon_color = self.horizon_colors.get(horizon_name, colorlist[i % len(colorlist)])
+                ax1.plot(fv_length_list, fv_depth_list, color=horizon_color, linewidth=linewidth)
+                ax1.plot(hv_length_list, hv_depth_list, color=horizon_color, linewidth=linewidth, linestyle='--')
+                ax1.scatter(fv_length_list, fv_depth_list, marker='^', color=horizon_color, label=f'{horizon_name} FW', s=30)
+                ax1.scatter(hv_length_list, hv_depth_list, marker='v', color=horizon_color, label=f'{horizon_name} HW', s=30)
+
+
+
+            # Format first subplot
+            ax1.set_ylabel(f'{z_select} ({self.unit_depth})')
+            #ax1.set_title(title)
+            #ax1.invert_yaxis()
+            ax1.legend(loc='best', fontsize=8)
+            if gridlines:
+                ax1.grid(True, alpha=0.3)
+            
+            # Second subplot: throw profile
+            if self.fv_df is not None and self.hv_df is not None:
+                for i in range(1, self.fv_df.shape[1]):
+                    throw = self.fv_df.iloc[:,i] - self.hv_df.iloc[:,i]
+                    horizon_name = self.fv_df.columns[i]
+                    colorlist = ['blue', 'orange', 'green', 'red', 'purple', 'brown', 'pink', 'gray', 'olive', 'cyan']
+                    horizon_color = self.horizon_colors.get(horizon_name, colorlist[i-1 % len(colorlist)])
+                    ax2.plot(self.fv_df['length'], throw, 
+                            color=horizon_color,
+                            linewidth=linewidth,
+                            label=horizon_name)
+                
+                ax2.set_xlabel(f'Length ({self.unit_xy})')
+                ax2.set_ylabel(f'Throw ({self.unit_depth})')
+                ax2.legend(loc='best', fontsize=8)
+                if gridlines:
+                    ax2.grid(True, alpha=0.3)
+            
+            plt.tight_layout()
+            return fig
+            
+        except Exception as e:
+            import traceback
+            print(f"Error in qc_plot_method: {traceback.format_exc()}")
+            raise
+
+    def throw_plot_method(self, fv_df=None, hv_df=None, h_color=None, title='', figsize=(6,12), gridlines=1, linewidth=1, meanthrow=1, showlegend=1,invertx = 1, z_select='Z'):
         """
         Create a throw profile plot as a class method.
         """
@@ -2128,6 +3437,10 @@ class EFA_juxtaposition(tk.Tk):
             linewidth = self.linewidth.get()
         if meanthrow == 1:
             meanthrow = self.meanthrow_var.get()
+        if showlegend == 1:
+            showlegend = self.throw_leg_var.get()
+        if invertx == 1:
+            invertx = self.throw_invertx_var.get()
         if z_select == 'Z':
             z_select = self.z_select.get()
             
@@ -2138,35 +3451,49 @@ class EFA_juxtaposition(tk.Tk):
         for i in range(1,fv_df.shape[1]):
             throw = fv_df.iloc[:,i]-hv_df.iloc[:,i]
             throwlist.append(throw)
-            plt.plot(fv_df['length'],throw,color=h_color.loc[i-1,'Color'], linewidth = linewidth)
-            tmin = round(min(fv_df.iloc[:,i]-hv_df.iloc[:,i]),1)
-            tmean = round(np.mean(fv_df.iloc[:,i]-hv_df.iloc[:,i]),1)
-            tmax = round(max(fv_df.iloc[:,i]-hv_df.iloc[:,i]),1)
+            # Add label for legend (use Alias if available, otherwise Horizon name)
+            horizon_label = h_color.loc[i-1,'Alias'] if h_color.loc[i-1,'Alias'] else h_color.loc[i-1,'Horizon']
+            plt.plot(fv_df['length'],throw,color=h_color.loc[i-1,'Color'], linewidth = linewidth, label=horizon_label)
+            tmin = round(np.nanmin(fv_df.iloc[:,i]-hv_df.iloc[:,i]),1)
+            tmean = round(np.nanmean(fv_df.iloc[:,i]-hv_df.iloc[:,i]),1)
+            tmax = round(np.nanmax(fv_df.iloc[:,i]-hv_df.iloc[:,i]),1)
             throwrange.append([h_color.loc[i-1,'Horizon'], h_color.loc[i-1,'Alias'],tmin,tmean,tmax])
         throwarray = np.array(throwlist)
         if meanthrow == 1:
-            plt.plot(fv_df['length'], throwarray.mean(0),color = 'black', linestyle = 'dotted')
-        plt.xlabel(f"Distance along mean strike {self.unit_xy}")
+            # Suppress RuntimeWarning about mean of empty slice (happens when all values are NaN)
+            with warnings.catch_warnings():
+                warnings.filterwarnings('ignore', category=RuntimeWarning)
+                mean_throw = np.nanmean(throwarray, axis=0)
+            plt.plot(fv_df['length'], mean_throw, color='black', linestyle='dotted', label='Mean Throw')
+            
+        plt.xlabel(f"Distance along mean strike ({self.unit_xy})")
         plt.ylabel(f"Throw ({self.z_select_to_unit()})")
         # Place text in the upper left corner of the plot
-        #ax = plt.gca()
-        #xlim = ax.get_xlim()
-        #ylim = ax.get_ylim()
-        #plt.text(xlim[0], ylim[1]+25, 'ul', size=15, va='top', ha='left')
-        # Place text in the upper right corner of the plot
-        #plt.text(xlim[1], ylim[1]+25, 'ur', size=15, va='top', ha='right')
         plt.title(title)
+        #Get compass directions from strike
         ur, ul = strike_to_compass(self.strike)
-        plt.title(ul, loc='left')
-        plt.title(ur, loc='right')
+        # invert x axis if specified, invert compas directions
+        if invertx:
+            plt.gca().invert_xaxis()
+            plt.title(ul, loc='right')
+            plt.title(ur, loc='left')
+        else:
+            plt.title(ur, loc='right')
+            plt.title(ul, loc='left')
+
+        
+        # Add legend at best location if enabled
+        self.throwlegend_handles, self.throwlegend_labels = plt.gca().get_legend_handles_labels()
+        if showlegend:
+            plt.legend(loc='best', fontsize=8, framealpha=0.9)
+        
         if gridlines == 1:
             plt.grid(alpha = 0.5)
         throwrange_df = pd.DataFrame(throwrange,columns=['Horizon', 'Alias', 'min_Throw', 'mean_throw','max_throw'])
         return(fig,throwrange_df, throwarray)
 
 
-
-    def zone_color_plot_method(self, fv_df=None, hv_df=None, ld_dict=None, h_color=None, z_color=None, title='', figsize=(6,12), fv=1, hv=1, fill=1, gridlines=1, linewidth=1, z_select='Z', disp_orgpoints=1):
+    def zone_color_plot_method(self, fv_df=None, hv_df=None, ld_dict=None, h_color=None, z_color=None, title='', figsize=(6,12), fv=1, hv=1, fill=1, gridlines=1, linewidth=1, showlegend=1,invertx = 1, z_select='Z', disp_orgpoints=1):
         """
         Basic horizon plotter function that uses the footwall and hangingwall files and zone colors as a class method.
         """
@@ -2195,32 +3522,80 @@ class EFA_juxtaposition(tk.Tk):
             hv = self.hv_var.get()
         if fill == 1:
             fill = self.fill_var.get()
+        if showlegend == 1:
+            showlegend = self.juxt_leg_var.get()
         if disp_orgpoints == 1:
             disp_orgpoints = self.orgpoints.get()
+        if invertx == 1:
+            invertx = self.lith_invertx_var.get()
         if z_select == 'Z':
             z_select = self.z_select.get()
             
-        title = 'Zone Lith. - ' + title
+        title = 'Lithology Juxtaposition - ' + title
         fig = plt.figure(figsize = figsize)
+        
+        # Track which zones are displayed for legend
+        displayed_zones = set()
+        
         if fill == 1:
             if hv_df.shape[1] > 2:
                 for i in range(2,hv_df.shape[1]):
+                    zone_idx = i-2
                     if fv == 1:
-                        plt.fill_between(fv_df['length'],fv_df.iloc[:,i-1],fv_df.iloc[:,i],color=z_color.loc[i-2,'Color'],alpha=0.5)
+                        #plt.fill_between(fv_df['length'],fv_df.iloc[:,i-1],fv_df.iloc[:,i],color=z_color.loc[i-2,'Color'],alpha=0.5)
+                        # Extract Length and depth values for horizon i-1 where values are not nan
+                        fv_length = fv_df['length'][~np.isnan(fv_df.iloc[:,i-1])].values
+                        fv_depth = fv_df.iloc[:,i-1][~np.isnan(fv_df.iloc[:,i-1])].values
+                        # extract Length and depth values for horizon i where values are not nan
+                        fv_length2 = fv_df['length'][~np.isnan(fv_df.iloc[:,i])].values
+                        fv_depth2 = fv_df.iloc[:,i][~np.isnan(fv_df.iloc[:,i])].values
+                        # Create polygon between fv_length and fv_length2 and use plt.fill to fill polygon
+                        plt.fill(np.concatenate([fv_length, fv_length2[::-1]]),
+                                 np.concatenate([fv_depth, fv_depth2[::-1]]),
+                                 color=z_color.loc[zone_idx,'Color'], alpha=0.5)
+                        displayed_zones.add(zone_idx)
+
                     if hv == 1:
-                        plt.fill_between(hv_df['length'],hv_df.iloc[:,i-1],hv_df.iloc[:,i],color=z_color.loc[i-2,'Color'],alpha=0.5)
+                        #plt.fill_between(hv_df['length'],hv_df.iloc[:,i-1],hv_df.iloc[:,i],color=z_color.loc[i-2,'Color'],alpha=0.5)
+                        hv_length = hv_df['length'][~np.isnan(hv_df.iloc[:,i-1])].values
+                        hv_depth = hv_df.iloc[:,i-1][~np.isnan(hv_df.iloc[:,i-1])].values
+                        # extract Length and depth values for horizon i where values are not nan
+                        hv_length2 = hv_df['length'][~np.isnan(hv_df.iloc[:,i])].values
+                        hv_depth2 = hv_df.iloc[:,i][~np.isnan(hv_df.iloc[:,i])].values
+                        # Create polygon between hv_length and hv_length2 and use plt.fill to fill polygon
+                        plt.fill(np.concatenate([hv_length, hv_length2[::-1]]),
+                                 np.concatenate([hv_depth, hv_depth2[::-1]]),
+                                 color=z_color.loc[zone_idx,'Color'], alpha=0.5)
+                        displayed_zones.add(zone_idx)
         if fv == 1:
             for i in range(1,fv_df.shape[1]):
-                plt.plot(fv_df['length'],fv_df.iloc[:,i],color=h_color.loc[i-1,'Color'], linewidth = linewidth)
+                horizon_label = h_color.loc[i-1,'Alias'] if h_color.loc[i-1,'Alias'] else h_color.loc[i-1,'Horizon']
+                plt.plot(fv_df['length'],fv_df.iloc[:,i],color=h_color.loc[i-1,'Color'], linewidth = linewidth, label=f'{horizon_label} (FW)')
         if hv == 1:
             for i in range(1,fv_df.shape[1]):
-                plt.plot(hv_df['length'],hv_df.iloc[:,i],color=h_color.loc[i-1,'Color'] ,linestyle='--', linewidth = linewidth)
+                horizon_label = h_color.loc[i-1,'Alias'] if h_color.loc[i-1,'Alias'] else h_color.loc[i-1,'Horizon']
+                plt.plot(hv_df['length'],hv_df.iloc[:,i],color=h_color.loc[i-1,'Color'] ,linestyle='--', linewidth = linewidth, label=f'{horizon_label} (HW)')
         if fv == 0:
             for i in range(1,fv_df.shape[1]):
                 plt.plot(fv_df['length'],fv_df.iloc[:,i],color=h_color.loc[i-1,'Color'], alpha = 0.1, linewidth = linewidth)
         if hv == 0:
             for i in range(1,fv_df.shape[1]):
                 plt.plot(hv_df['length'],hv_df.iloc[:,i],color=h_color.loc[i-1,'Color'] ,linestyle='--', alpha = 0.1, linewidth = linewidth)
+        
+         # Draw horizontal lines if enabled 
+        if self.hline_enabled_var.get() and self.hline_color_var.get().lower() != 'none':
+            plt.hlines(y=self.hline_elevation_var.get(), xmin=self.hline_xmin_var.get(), xmax=self.hline_xmax_var.get(), colors=self.hline_color_var.get(), linestyles=self.hline_style_var.get(), linewidth=1.5, label=self.hline_name_var.get())
+        
+        if self.hline2_enabled_var.get() and self.hline_color_var.get().lower() != 'none':
+            plt.hlines(y=self.hline2_elevation_var.get(), xmin=self.hline2_xmin_var.get(), xmax=self.hline2_xmax_var.get(), colors=self.hline2_color_var.get(), linestyles=self.hline2_style_var.get(), linewidth=1.5, label=self.hline2_name_var.get())
+        
+        if self.hline3_enabled_var.get() and self.hline_color_var.get().lower() != 'none':
+            plt.hlines(y=self.hline3_elevation_var.get(), xmin=self.hline3_xmin_var.get(), xmax=self.hline3_xmax_var.get(), colors=self.hline3_color_var.get(), linestyles=self.hline3_style_var.get(), linewidth=1.5, label=self.hline3_name_var.get())
+
+        if self.hline4_enabled_var.get() and self.hline_color_var.get().lower() != 'none':
+            plt.hlines(y=self.hline4_elevation_var.get(), xmin=self.hline4_xmin_var.get(), xmax=self.hline4_xmax_var.get(), colors=self.hline4_color_var.get(), linestyles=self.hline4_style_var.get(), linewidth=1.5, label=self.hline4_name_var.get())
+
+        
         if disp_orgpoints == 1:
             for i in range(len(list(ld_dict.keys()))):
                 #print(list(ld_dict.keys())[i])
@@ -2243,25 +3618,240 @@ class EFA_juxtaposition(tk.Tk):
                 plt.scatter(fv_length_list, fv_depth_list, marker='^', color=self.horizon_colors[list(ld_dict.keys())[i]])
                 plt.scatter(hv_length_list, hv_depth_list, marker='v', color=self.horizon_colors[list(ld_dict.keys())[i]])
 
-
-
-        #if pointid == 1:
-            #for ti,ftxt in enumerate(zfv):
-                #plt.text(ld_dict[list(ld_dict.keys())[i]]['fv']['l'][ti],ld_dict[list(ld_dict.keys())[i]]['fv']['d'][ti], ftxt)
-            #for hi,htxt in enumerate(zhv):
-                #plt.text(ld_dict[list(ld_dict.keys())[i]]['hv']['l'][hi],ld_dict[list(ld_dict.keys())[i]]['hv']['d'][hi], htxt)
         
-        plt.xlabel(f"Distance along mean strike {self.unit_xy}")
+        plt.xlabel(f"Distance along mean strike ({self.unit_xy})")
         plt.ylabel(f"Elevation ({self.z_select_to_unit()})")
         plt.title(title)
         ur, ul = strike_to_compass(self.strike)
-        plt.title(ul, loc='left')
-        plt.title(ur, loc='right')
+        # invert x axis if specified, invert compas directions
+        if invertx:
+            plt.gca().invert_xaxis()
+            plt.title(ul, loc='right')
+            plt.title(ur, loc='left')
+        else:
+            plt.title(ur, loc='right')
+            plt.title(ul, loc='left')
+        
+        # Add legend at best location if enabled
+        if showlegend:
+            # Get current legend handles and labels from the plot
+            handles, labels = plt.gca().get_legend_handles_labels()
+            
+            # Add lithology zone patches to legend if fill is displayed
+            if fill == 1 and len(displayed_zones) > 0:
+                # Add separator comment (using empty handle)
+                if len(handles) > 0:
+                    handles.append(plt.Line2D([0], [0], color='none'))
+                    labels.append('─── Lithology ───')
+                
+                # Add each displayed zone with lithology type
+                for zone_idx in sorted(displayed_zones):
+                    zone_label = z_color.loc[zone_idx, 'Alias'] if z_color.loc[zone_idx, 'Alias'] else z_color.loc[zone_idx, 'Zone']
+                    lithology_type = z_color.loc[zone_idx, 'Lithology'] if 'Lithology' in z_color.columns else 'Undefined'
+                    
+                    # Combine zone name with lithology type
+                    full_label = f"{zone_label} ({lithology_type})"
+                    
+                    zone_patch = Patch(facecolor=z_color.loc[zone_idx, 'Color'], 
+                                      alpha=0.5, 
+                                      label=full_label)
+                    handles.append(zone_patch)
+                    labels.append(full_label)
+            
+            # Display legend with all handles
+            self.lithologyleg_handles = handles  # Store for legend plot
+            self.lithologyleg_labels = labels    # Store for legend plot
+            if len(handles) > 0:
+                plt.legend(handles=handles, labels=labels, loc='best', fontsize=8, framealpha=0.9)
+        
         if gridlines == 1:
             plt.grid(alpha=0.5)
         return(fig)
 
-    def zone_juxtscenario_plot_method(self, fv_df=None, hv_df=None, ld_dict=None, h_color=None, z_color=None, title='', figsize=(6,12), gridlines=1, linewidth=1, fv=1, hv=1, apex=1, apexid=1, z_select='Z', disp_orgpoints=1):
+    def zone_unit_plot_method(self, fv_df=None, hv_df=None, ld_dict=None, h_color=None, zone_unit_colors=None, title='', figsize=(6,12), fv=1, hv=1, fill=1, gridlines=1, linewidth=1, showlegend=1, invertx=1, z_select='Z', disp_orgpoints=1):
+        """
+        Zone unit color plotter function that uses zone_unit_colors instead of lithology colors.
+        """
+        # Use instance variables as defaults if not provided
+        if fv_df is None:
+            fv_df = self.nfv_df
+        if hv_df is None:
+            hv_df = self.nhv_df
+        if ld_dict is None:
+            ld_dict = self.ld_dict
+        if h_color is None:
+            h_color = self.ecolor_df
+        if zone_unit_colors is None:
+            zone_unit_colors = self.zone_unit_colors
+        if not title:
+            title = self.plot_name.get() + f' - mean strike/dip: {round(self.strike)}/{round(self.dip)}'
+        if figsize == (6,12):
+            figsize = (self.width.get(), self.height.get())
+        if gridlines == 1:
+            gridlines = self.gridvarf_unit.get()
+        if linewidth == 1:
+            linewidth = self.linewidth.get()
+        if fv == 1:
+            fv = self.fv_unit_var.get()
+        if hv == 1:
+            hv = self.hv_unit_var.get()
+        if fill == 1:
+            fill = self.fill_unit_var.get()
+        if showlegend == 1:
+            showlegend = self.juxt_unit_leg_var.get()
+        if disp_orgpoints == 1:
+            disp_orgpoints = self.orgpoints_unit.get()
+        if invertx == 1:
+            invertx = self.unit_invertx_var.get()
+        if z_select == 'Z':
+            z_select = self.z_select.get()
+            
+        title = 'Zone Juxtaposition - ' + title
+        fig = plt.figure(figsize = figsize)
+        
+        # Track which zones are displayed for legend
+        displayed_zones = set()
+        
+        if fill == 1:
+            if hv_df.shape[1] > 2:
+                for i in range(2, hv_df.shape[1]):
+                    alpha = 0.5
+                    zone_idx = i - 2
+                    # Get zone alias for lookup in zone_unit_colors
+                    if zone_idx < len(self.ezcolor_df):
+                        zone_alias = self.ezcolor_df.loc[zone_idx, 'Alias']
+                        zone_color = zone_unit_colors.get(zone_alias, '#ffffff')  # Default color if not found
+                    else:
+                        zone_color = '#ffffff'
+                    
+                    # set alpha to 0 if zone color is white
+                    if zone_color.lower() == '#ffffff' or zone_color.lower() == 'white':
+                        alpha = 0.0
+
+                    if fv == 1:
+                        # Extract Length and depth values for horizon i-1 where values are not nan
+                        fv_length = fv_df['length'][~np.isnan(fv_df.iloc[:,i-1])].values
+                        fv_depth = fv_df.iloc[:,i-1][~np.isnan(fv_df.iloc[:,i-1])].values
+                        # extract Length and depth values for horizon i where values are not nan
+                        fv_length2 = fv_df['length'][~np.isnan(fv_df.iloc[:,i])].values
+                        fv_depth2 = fv_df.iloc[:,i][~np.isnan(fv_df.iloc[:,i])].values
+                        # Create polygon between fv_length and fv_length2 and use plt.fill to fill polygon
+                        plt.fill(np.concatenate([fv_length, fv_length2[::-1]]),
+                                 np.concatenate([fv_depth, fv_depth2[::-1]]),
+                                 color=zone_color, alpha=alpha)
+                        displayed_zones.add(zone_idx)
+
+                    if hv == 1:
+                        hv_length = hv_df['length'][~np.isnan(hv_df.iloc[:,i-1])].values
+                        hv_depth = hv_df.iloc[:,i-1][~np.isnan(hv_df.iloc[:,i-1])].values
+                        # extract Length and depth values for horizon i where values are not nan
+                        hv_length2 = hv_df['length'][~np.isnan(hv_df.iloc[:,i])].values
+                        hv_depth2 = hv_df.iloc[:,i][~np.isnan(hv_df.iloc[:,i])].values
+                        # Create polygon between hv_length and hv_length2 and use plt.fill to fill polygon
+                        plt.fill(np.concatenate([hv_length, hv_length2[::-1]]),
+                                 np.concatenate([hv_depth, hv_depth2[::-1]]),
+                                 color=zone_color, alpha=alpha)
+                        displayed_zones.add(zone_idx)
+ 
+
+        
+        if fv == 1:
+            for i in range(1, fv_df.shape[1]):
+                horizon_label = h_color.loc[i-1,'Alias'] if h_color.loc[i-1,'Alias'] else h_color.loc[i-1,'Horizon']
+                plt.plot(fv_df['length'], fv_df.iloc[:,i], color=h_color.loc[i-1,'Color'], linewidth=linewidth, label=f'{horizon_label} (FW)')
+        
+        if hv == 1:
+            for i in range(1, fv_df.shape[1]):
+                horizon_label = h_color.loc[i-1,'Alias'] if h_color.loc[i-1,'Alias'] else h_color.loc[i-1,'Horizon']
+                plt.plot(hv_df['length'], hv_df.iloc[:,i], color=h_color.loc[i-1,'Color'], linestyle='--', linewidth=linewidth, label=f'{horizon_label} (HW)')
+
+        
+        if fv == 0:
+            for i in range(1, fv_df.shape[1]):
+                plt.plot(fv_df['length'], fv_df.iloc[:,i], color=h_color.loc[i-1,'Color'], alpha=0.1, linewidth=linewidth)
+        
+        if hv == 0:
+            for i in range(1, fv_df.shape[1]):
+                plt.plot(hv_df['length'], hv_df.iloc[:,i], color=h_color.loc[i-1,'Color'], linestyle='--', alpha=0.1, linewidth=linewidth)
+
+        # Draw horizontal lines if enabled 
+        if self.hline_enabled_var.get() and self.hline_color_var.get().lower() != 'none':
+            plt.hlines(y=self.hline_elevation_var.get(), xmin=self.hline_xmin_var.get(), xmax=self.hline_xmax_var.get(), colors=self.hline_color_var.get(), linestyles=self.hline_style_var.get(), linewidth=1.5, label=self.hline_name_var.get())
+        
+        if self.hline2_enabled_var.get() and self.hline_color_var.get().lower() != 'none':
+            plt.hlines(y=self.hline2_elevation_var.get(), xmin=self.hline2_xmin_var.get(), xmax=self.hline2_xmax_var.get(), colors=self.hline2_color_var.get(), linestyles=self.hline2_style_var.get(), linewidth=1.5, label=self.hline2_name_var.get())
+        
+        if self.hline3_enabled_var.get() and self.hline_color_var.get().lower() != 'none':
+            plt.hlines(y=self.hline3_elevation_var.get(), xmin=self.hline3_xmin_var.get(), xmax=self.hline3_xmax_var.get(), colors=self.hline3_color_var.get(), linestyles=self.hline3_style_var.get(), linewidth=1.5, label=self.hline3_name_var.get())
+
+        if self.hline4_enabled_var.get() and self.hline_color_var.get().lower() != 'none':
+            plt.hlines(y=self.hline4_elevation_var.get(), xmin=self.hline4_xmin_var.get(), xmax=self.hline4_xmax_var.get(), colors=self.hline4_color_var.get(), linestyles=self.hline4_style_var.get(), linewidth=1.5, label=self.hline4_name_var.get())
+
+        if disp_orgpoints == 1:
+            for i in range(len(list(ld_dict.keys()))):
+                zfv = []
+                for zfvi in range(0, len(ld_dict[list(ld_dict.keys())[i]]['fv']['l'])):
+                    zfv.append(zfvi)
+                zhv = []
+                for zhvi in range(0, len(ld_dict[list(ld_dict.keys())[i]]['hv']['l'])):
+                    zhv.append(zhvi)
+            
+                fv_length_list = ld_dict[list(ld_dict.keys())[i]]['fv']['l']
+                fv_depth_list = ld_dict[list(ld_dict.keys())[i]]['fv']['d']
+                hv_length_list = ld_dict[list(ld_dict.keys())[i]]['hv']['l']
+                hv_depth_list = ld_dict[list(ld_dict.keys())[i]]['hv']['d']
+
+                plt.scatter(fv_length_list, fv_depth_list, marker='^', color=self.horizon_colors[list(ld_dict.keys())[i]])
+                plt.scatter(hv_length_list, hv_depth_list, marker='v', color=self.horizon_colors[list(ld_dict.keys())[i]])
+
+        plt.xlabel(f"Distance along mean strike ({self.unit_xy})")
+        plt.ylabel(f"Elevation ({self.z_select_to_unit()})")
+        plt.title(title)
+        ur, ul = strike_to_compass(self.strike)
+        # invert x axis if specified, invert compas directions
+        if invertx:
+            plt.gca().invert_xaxis()
+            plt.title(ul, loc='right')
+            plt.title(ur, loc='left')
+        else:
+            plt.title(ur, loc='right')
+            plt.title(ul, loc='left')
+        
+        # Add legend at best location if enabled
+        if showlegend:
+            # Get current legend handles and labels from the plot
+            handles, labels = plt.gca().get_legend_handles_labels()
+            
+            # Add unit zone patches to legend if fill is displayed
+            if fill == 1 and len(displayed_zones) > 0:
+                # Add separator comment (using empty handle)
+                if len(handles) > 0:
+                    handles.append(plt.Line2D([0], [0], color='none'))
+                    labels.append('─── Zone Units ───')
+                
+                # Add each displayed zone with unit color
+                for zone_idx in sorted(displayed_zones):
+                    if zone_idx < len(self.ezcolor_df):
+                        zone_alias = self.ezcolor_df.loc[zone_idx, 'Alias']
+                        zone_color = zone_unit_colors.get(zone_alias, '#ffffff')
+                        
+                        zone_patch = Patch(facecolor=zone_color, 
+                                          alpha=0.5, 
+                                          label=zone_alias)
+                        handles.append(zone_patch)
+                        labels.append(zone_alias)
+            
+            # Display legend with all handles
+            self.unitlegend_handles = handles
+            self.unitlegend_labels = labels
+            if len(handles) > 0:
+                plt.legend(handles=handles, labels=labels, loc='best', fontsize=8, framealpha=0.9)
+        
+        if gridlines == 1:
+            plt.grid(alpha=0.5)
+        return(fig)
+
+    def zone_juxtscenario_plot_method(self, fv_df=None, hv_df=None, ld_dict=None, h_color=None, z_color=None, title='', figsize=(6,12), gridlines=1, linewidth=1, fv=1, hv=1, apex=1, apexid=1, showlegend=1, invertx=1, z_select='Z', disp_orgpoints=1):
         """
         Juxtaposition scenario plot as a class method.
         """
@@ -2292,6 +3882,10 @@ class EFA_juxtaposition(tk.Tk):
             apex = self.apex_var.get()
         if apexid == 1:
             apexid = self.apexid_var.get()
+        if showlegend == 1:
+            showlegend = self.scenario_leg_var.get()
+        if invertx == 1:
+            invertx = self.scen_invertx_var.get()
         if disp_orgpoints == 1:
             disp_orgpoints = self.orgpoints2.get()
         if z_select == 'Z':
@@ -2302,6 +3896,9 @@ class EFA_juxtaposition(tk.Tk):
         fig = plt.figure(figsize=figsize)
         fv_poly_x = np.append(fv_df['length'].to_numpy(),fv_df['length'].to_numpy()[::-1])
         hv_poly_x = np.append(hv_df['length'].to_numpy(),hv_df['length'].to_numpy()[::-1])
+        
+        # Track juxtaposition types for legend (color -> label mapping)
+        juxt_types_displayed = {}
         
         def create_safe_polygon(x_coords, y_coords):
             """
@@ -2357,6 +3954,11 @@ class EFA_juxtaposition(tk.Tk):
                 if hv_poly is None:
                     continue  # Skip this iteration if polygon creation failed
                 new_color,fv_type,hv_type = juxtaposition_color(z_color.loc[i-2,'Color'],z_color.loc[j-2,'Color'])
+                
+                # Create juxtaposition type label for legend
+                juxt_label = f"{fv_type}-{hv_type}"
+                juxt_types_displayed[new_color] = juxt_label
+                
                 try:
                     p_intersect =  fv_poly.intersection(hv_poly)
                     if p_intersect.geom_type == 'MultiPolygon':
@@ -2385,7 +3987,7 @@ class EFA_juxtaposition(tk.Tk):
                                         juxt_list.append([list(fv_df)[i-1]+'-'+list(fv_df)[i],list(hv_df)[j-1]+'-'+list(hv_df)[j],z_color.loc[i-2,'Alias'],z_color.loc[j-2,'Alias'],round(xm,0),round(ym,0),fv_type,hv_type])
                 except:
                     warning = 'Topolygy Error, juxtaposition polygon not displayed properly'
-                    print(warning)
+                    #print(warning)
         
         for i in range(1,fv_df.shape[1]):
             plt.plot(fv_df['length'],fv_df.iloc[:,i],color=h_color.loc[i-1,'Color'], linewidth = linewidth, alpha = 0.1)
@@ -2394,17 +3996,33 @@ class EFA_juxtaposition(tk.Tk):
             
         if fv == 1:
             for i in range(1,fv_df.shape[1]):
-                plt.plot(fv_df['length'],fv_df.iloc[:,i],color=h_color.loc[i-1,'Color'], linewidth = linewidth)
+                horizon_label = h_color.loc[i-1,'Alias'] if h_color.loc[i-1,'Alias'] else h_color.loc[i-1,'Horizon']
+                plt.plot(fv_df['length'],fv_df.iloc[:,i],color=h_color.loc[i-1,'Color'], linewidth = linewidth, label=f'{horizon_label} (FW)')
         if hv == 1:
             for i in range(1,fv_df.shape[1]):
-                plt.plot(hv_df['length'],hv_df.iloc[:,i],color=h_color.loc[i-1,'Color'] ,linestyle='--', linewidth = linewidth)
+                horizon_label = h_color.loc[i-1,'Alias'] if h_color.loc[i-1,'Alias'] else h_color.loc[i-1,'Horizon']
+                plt.plot(hv_df['length'],hv_df.iloc[:,i],color=h_color.loc[i-1,'Color'] ,linestyle='--', linewidth = linewidth, label=f'{horizon_label} (HW)')
         juxt_df = pd.DataFrame(juxt_list,columns=['FV_Zone','HV_Zone','FV_Alias','HV_Alias','Length','Elevation','FV_Lith','HV_Lith'])
         if apex == 1:
             plt.scatter(juxt_df['Length'], juxt_df['Elevation'], marker = 'x', color = 'red')
         if apexid == 1:
             for jindex, jrow in juxt_df.iterrows():
                 plt.text(jrow['Length'], jrow['Elevation'],jindex, color = 'darkred')
+
+         # Draw horizontal lines if enabled 
+        if self.hline_enabled_var.get() and self.hline_color_var.get().lower() != 'none':
+            plt.hlines(y=self.hline_elevation_var.get(), xmin=self.hline_xmin_var.get(), xmax=self.hline_xmax_var.get(), colors=self.hline_color_var.get(), linestyles=self.hline_style_var.get(), linewidth=1.5, label=self.hline_name_var.get())
         
+        if self.hline2_enabled_var.get() and self.hline_color_var.get().lower() != 'none':
+            plt.hlines(y=self.hline2_elevation_var.get(), xmin=self.hline2_xmin_var.get(), xmax=self.hline2_xmax_var.get(), colors=self.hline2_color_var.get(), linestyles=self.hline2_style_var.get(), linewidth=1.5, label=self.hline2_name_var.get())
+        
+        if self.hline3_enabled_var.get() and self.hline_color_var.get().lower() != 'none':
+            plt.hlines(y=self.hline3_elevation_var.get(), xmin=self.hline3_xmin_var.get(), xmax=self.hline3_xmax_var.get(), colors=self.hline3_color_var.get(), linestyles=self.hline3_style_var.get(), linewidth=1.5, label=self.hline3_name_var.get())
+
+        if self.hline4_enabled_var.get() and self.hline_color_var.get().lower() != 'none':
+            plt.hlines(y=self.hline4_elevation_var.get(), xmin=self.hline4_xmin_var.get(), xmax=self.hline4_xmax_var.get(), colors=self.hline4_color_var.get(), linestyles=self.hline4_style_var.get(), linewidth=1.5, label=self.hline4_name_var.get())
+
+
         if disp_orgpoints == 1:
             for i in range(len(list(ld_dict.keys()))):
                 #print(list(ld_dict.keys())[i])
@@ -2424,10 +4042,57 @@ class EFA_juxtaposition(tk.Tk):
         
         plt.title(title)
         ur, ul = strike_to_compass(self.strike)
-        plt.title(ul, loc='left')
-        plt.title(ur, loc='right')
+        # invert x axis if specified, invert compas directions
+        if invertx:
+            plt.gca().invert_xaxis()
+            plt.title(ul, loc='right')
+            plt.title(ur, loc='left')
+        else:
+            plt.title(ur, loc='right')
+            plt.title(ul, loc='left')
+        #plt.title(ul, loc='left')
+        #plt.title(ur, loc='right')
         plt.xlabel(f"Distance along mean strike ({self.unit_xy})")
         plt.ylabel(f"Elevation  ({self.z_select_to_unit()})")
+        
+        # Add legend at best location if enabled
+        if showlegend:
+            # Get current legend handles and labels from the plot
+            handles, labels = plt.gca().get_legend_handles_labels()
+            
+            # Add juxtaposition type patches to legend if any exist
+            if len(juxt_types_displayed) > 0:
+                # Add separator
+                if len(handles) > 0:
+                    handles.append(plt.Line2D([0], [0], color='none'))
+                    labels.append('─── Juxtaposition ───')
+                
+                # Define the desired order of juxtaposition types
+                juxt_order = {
+                    'green': 'Good Res-Good Res',
+                    'yellow': 'Good Res-Poor Res',
+                    'orange': 'Poor Res-Poor Res',
+                    'black': 'Res-SR',
+                    'LightGray': 'Res-No Res',
+                    'DarkGray': 'No Res-No Res',
+                    'azure': 'Undefined-Any'
+                }
+                
+                # Add patches in order, only for types that are displayed
+                for color, default_label in juxt_order.items():
+                    if color in juxt_types_displayed:
+                        # Use the actual label from the data
+                        juxt_label = juxt_types_displayed[color]
+                        juxt_patch = Patch(facecolor=color, alpha=1.0, label=juxt_label)
+                        handles.append(juxt_patch)
+                        labels.append(juxt_label)
+            
+            # Display legend with all handles
+            self.scenariolegend_handles = handles
+            self.scenariolegend_labels = labels
+            if len(handles) > 0:
+                plt.legend(handles=handles, labels=labels, loc='best', fontsize=8, framealpha=0.9)
+        
         if gridlines == 1:
             plt.grid(alpha=0.5)
         return(fig,juxt_df,warning)
@@ -2463,17 +4128,654 @@ Features:
 • Session save/load capabilities
 • CSV export functionality
 
-License: GNU General Public License v3.0
-This is free software; you are free to change and redistribute it.
-There is NO WARRANTY, to the extent permitted by law.
+License: MIT License
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software.
 
-For source code and license details, visit:
-https://www.gnu.org/licenses/gpl-3.0.html
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
 
 © 2025 - John-Are Hansen"""
         messagebox.showinfo("About EFA", about_text)
+    
+    def show_help(self):
+        """Display comprehensive help window with text and images"""
+        help_window = tk.Toplevel(self)
+        help_window.title("EFA Juxtaposition Analysis - User Guide")
+        try:
+            help_window.iconbitmap('help_images/efa_icon.ico')
+        except (FileNotFoundError, tk.TclError):
+            # Icon file not found or invalid - continue without icon
+            pass
+        help_window.geometry("900x700")
+        
+        # Create main container with canvas for scrolling
+        main_frame = ttk.Frame(help_window)
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Create canvas and scrollbar
+        canvas = tk.Canvas(main_frame, bg='white')
+        scrollbar = ttk.Scrollbar(main_frame, orient="vertical", command=canvas.yview)
+        
+        # Create frame inside canvas for content
+        scrollable_frame = ttk.Frame(canvas)
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        # Add content to scrollable frame
+        self._populate_help_content(scrollable_frame)
+        
+        # Pack canvas and scrollbar
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        # Enable mouse wheel scrolling
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        canvas.bind_all("<MouseWheel>", _on_mousewheel)
+        
+        # Add close button at bottom
+        button_frame = ttk.Frame(help_window)
+        button_frame.pack(fill=tk.X, padx=10, pady=5)
+        ttk.Button(button_frame, text="Close", command=help_window.destroy).pack(side=tk.RIGHT)
+        
+        # Cleanup mouse wheel binding when window closes
+        def on_closing():
+            canvas.unbind_all("<MouseWheel>")
+            help_window.destroy()
+        help_window.protocol("WM_DELETE_WINDOW", on_closing)
+    
+    def _populate_help_content(self, frame):
+        """Populate the help window with formatted content"""
+        # Configure text styles
+        title_font = ('Arial', 16, 'bold')
+        heading_font = ('Arial', 12, 'bold')
+        subheading_font = ('Arial', 11, 'bold')
+        body_font = ('Arial', 10)
+        
+        # Main title
+        title_label = ttk.Label(frame, text="EFA Juxtaposition Analysis - User Guide", 
+                               font=title_font, foreground='#0066cc')
+        title_label.pack(pady=(20, 10), padx=20)
+        
+        ttk.Separator(frame, orient='horizontal').pack(fill='x', padx=20, pady=5)
+        
+        # Table of Contents
+        toc_frame = ttk.LabelFrame(frame, text="Table of Contents", padding=10)
+        toc_frame.pack(fill='x', padx=20, pady=10)
+        
+        toc_text = """1. Getting Started
+2. Data Input
+3. Data Manipulation
+4. Plot Settings
+5. Plot Types
+6. Throw Plot
+7. Zone Juxtaposition Plot
+8. Lithology Juxtaposition Plot
+9. Juxtaposition Scenario Plot
+10. Exporting Results
+11. Session Management"""
+        
+        toc_label = ttk.Label(toc_frame, text=toc_text, font=body_font, justify='left')
+        toc_label.pack(anchor='w')
+        
+        # Section 1: Getting Started
+        self._add_help_section(frame, "1. Getting Started", heading_font, body_font,
+            """The EFA (Efficient Fault Analysis) Juxtaposition tool is designed for quick analysis of fault displacement and juxtaposition for single faults. It uses mapped fault contact points exported from Petrel, to generate throw profiles and juxtaposition plots, and calculate statistics on fault displacement.
+            
+Fault contact points represent the mapped footwall and hanging wall intersections between horizons and a given fault plane. The fault contact points used in this workflow, have been mapped in Petrel, converted to multipoints, depth converted (if needed), and exported as Petrel points with attributes format. The tool supports both time and depth mapped data, and requieres at least one fault contact point file as input. A single fault contact point file contains both the footwall and hanging wall cut-off points for one seismic horizon. Multiple fault contact point files can be loaded to represent multiple horizons, and the tool supports vertical shifting of horizons to account for non-mapped stratigraphy or thin units not resolvable on seismic data.
+
+Key Concepts:
+• Footwall (FW): The rock mass below the fault plane
+• Hanging wall (HW): The rock mass above the fault plane
+• Juxtaposition: Alignment of different geological units across the fault
+• Throw: The vertical displacement across the fault
+• Fault Contact points (FC points): The Footwall and haning wall intersection points between a seismic horizon and the fault plane""")
+        
+        # Add fault diagram image
+        self._add_help_image(frame, "help_images/fault_diagram.png", 
+                             caption="Figure 1: Relationship between footwall, hanging wall, fault plane, and fault contact points")
+        
+        # Add ada load image
+        self._add_help_image(frame, "help_images/example_datainput.png", 
+                             caption="Figure 2: Example of data import and preview")
+
+        # Section 2: Loading Data
+        self._add_help_section(frame, "2. Data Input", heading_font, body_font,
+            """Step 1: Select input file format:
+• Petrel fault contact points, converted to points and exported as Petrel points with attributes format - recomended format
+• Cegal fault contact points, converted to points and exported as Petrel points with attributes format
+
+Step 2: Select input fault contact files and set correct order:
+• Click 'Select Horizon Files' button
+• In the file dialog, select one or several fault contact point files in the chosen format
+• Each file must contain both footwall and hanging wall cut-off points for one seismic horizon
+• Files will appear in the 'selected files' listbox
+• If files are not in the correct order (from shallow to deep), click 'Sort File Order' and use buttons to move files up or down in the list
+
+Step 3: Load data to database
+• Click 'Load Data to Database' button
+• The application will read the selected files and extract footwall and hanging wall cut-off points
+• The data will now appear in the Data Preview window
+• QC the file structure and data consistency to ensure it looks correct and all files are consistent.""")
+   
+
+        # Add qc plot image
+        self._add_help_image(frame, "help_images/example_qcplot.png", 
+                             caption="Figure 3: Example QC plot tab, where throw and juxtaposition of mapped points can be evaluated")
+        
+        # Section 3: Data conversion and horizon shift
+        self._add_help_section(frame, "3. Data Manipulation", heading_font, body_font,
+            """Purpose: Transforms XYZ coordinates to a 2D representation along the fault and execute horizon shifts
+
+Step 1: Select Z-value field
+• Z = vertical scale in Depth or TWT depending on if data were mapped in depth or time
+• TWT auto = Two Way Time (ms), only appers in dataset if data has been depth converted
+• Depth 1 = Depth in meters or feet, only appers in dataset if data has been depth converted
+
+Step 2: Click 'Convert to Length/Depth'
+• Algorithm converts the mapped 2D fault contact points to a 2D coordinate system represented by length along fault strike and depth
+• Projects 3D points onto 2D fault plane
+• Resamples the data to equal spacing along fault strike.
+• Separates footwall and hangingwall data
+• The converted data will appear in the 'Length/Depth Data Preview' window
+• QC the data to ensure datapoints are in the correct order. Red data points indicate data out of order, theese data will be truncated when executing horizon shift.
+• The QC plot, in the 'QC Plot' tab, can also be used to verify data quality and order. It shows both fault maped fault juxtaposition in addition to fault throw along strike.
+
+Step 3: 'Edit Horizon Shift'
+• This step is optional. It allows for vertical shifting one or several input fault-horion intersection files.
+• Vertically shfiting horizons can e.g. account for non-mapped stratigraphy or thin units not resolvable on seismic data. It can also be used to test different uncertainty scenarios.
+• Nearby well data can e.g be used as input to horizon shfiting to infer thicknesses used for shifting.
+• To execute horizon shfits:
+    1. Click 'Edit Horizon Shift' button
+    2. Click on horizon to be shifted to highlight it
+    3. In the lower part of the window, enter one or several shift values, and click 'Uptade Row' to add the shift(s) to the table
+        • Shifts are relative to the original horizon position
+        • Positive values shift the horizon upward
+        • Negative values shift the horizon downward
+        • Zero value includes the original horizon position, and must be included if the original horizon position is to be part of the analysis
+        • Shifts are entered from shallow to deep, i.e. upward shifts before zero, and downward shifts after zero
+        • Use 'nan' to remove created horizon shifts
+    4. Repeat for other horizons as needed
+    5. Click 'Save Changes' to store the shift values
+  
+Step 4: click 'Execute Shift'
+• Applies the defined horizon shifts and displays them in the 'Shifted Data' tab
+• Shifted horizons are used in the subsequent juxtaposition analysis""")
+        
+        
+        # Horizon shift concept figure
+        self._add_help_image(frame, "help_images/example_HorizonShift.png",
+                           caption="Figure 4: Example of Horizon Shift Table in the application")
+        
+        # Horizon shift concept figure
+        self._add_help_image(frame, "help_images/example_Horizon_Shift_Concept.png",
+                           caption="Figure 5: Conceptual illustration of using a stratigraphic log to define horizon shifts of h1 and h4")
+
+        self._add_help_image(frame, "help_images/example_shift_datatab.png",
+                           caption="Figure 6: Example of shifted horizons displayed in the 'Shifted Data' tab")
 
 
+        # Section 4: Horizon and zone names and color definitions
+        self._add_help_section(frame, "4. Plot Settings", heading_font, body_font,
+            """Purpose: In the 'Plot Settings' tab, define colors and names and lithology for horizons and zone units. Note that theese settings can be changed at any time.
+            
+Step 1: Define plot name
+• Enter a descriptive name for the plots in the 'Plot Name' field
+
+Step 2: Edit Horizon Alias and Colors
+• If desiered write an alias name for each horizon in the 'Alias' column. This name will appear in the plot legends.
+• Click on the color box to open a color picker and select a color for each horizon.
+
+Step 3: Edit Zone Unit Colors and Names
+• Define geological unit names for the units defined between each horizon.
+• Select lithology for each zone unit in the 'Zone Unit Colors' table.
+• Click on the color box to open a color picker and select a color for each zone unit.
+    Note! If the color don't change, check that luminesence is not set to 0 in the color picker.
+            
+Step 4: click 'Generate All Plots'
+• This will generate all four plot types using the current settings and display them in their respective tabs.
+• Different output tables are also generated in the 'Data Output' tab for further analysis and export.      
+            """)
+
+
+        # Add plot settings image
+        self._add_help_image(frame, "help_images/example_plot_settings.png", 
+                             caption="Figure 7: Example of data import and preview")
+
+        self._add_help_section(frame, "5. Plot Types", heading_font, body_font,
+            """After clicking 'Generate All Plots' four different plot types are created and displayed in their respective tabs. Each plot type has specific features and functionalities as described below:
+• Each plot tab contains a legend area, and a plot area.
+• Tick boxes above the plots can be used to turn on/off different plot elements, display original points, invert x-axis, and show/hide legends.
+• Buttons below the plot can be used to manipulate plot size, zoom in/out, and export data""")
+
+
+
+
+        # Add plot settings image
+        self._add_help_image(frame, "help_images/example_throw_plot.png", 
+                             caption="Figure 8: Example of throw profile plot")
+
+        self._add_help_section(frame, "6. Throw Plot", heading_font, body_font,
+            """
+
+The throw profile plot is displayed in the 'Throw Plot' tab:
+• Shows throw (vertical displacement) along mean fault strike
+• Each line represents one fault-horizon intersection
+• Mean throw line (dotted) shows average throw for all horizons present at that location
+• Additional throw statistics can be found in the 'Data Output' tab
+• Note! If a horizon is shifted, the throw will be the same as the original horizon, unless truncated. If a horizon color is missing, it might thus be behind another one.""")
+
+        # Add plot settings image
+        self._add_help_image(frame, "help_images/example_zone_juxtaposition_plot.png", 
+                             caption="Figure 9: Example of zone juxtaposition plot")
+
+        self._add_help_section(frame, "7. Zone Juxtaposition Plot", heading_font, body_font,
+            """
+                 
+The Zone Juxtaposition Plot is displayed in the 'Zone Juxtaposition Plot' tab:
+• Displays which units are juxtaposed using the zone color definitions in the 'Plot Settings' tab
+• Colors for the footwall and haning wall zones are displayed with 50% transparency to visualize overlap
+• The plot can either be used to visualize e.g. formation colors for all zones, or only visualize juxtapositions for selected zones by setting the other colors to white
+• Footwall horizons: Solid lines with ▲ markers
+• Hangingwall horizons: Dashed lines with ▼ markers""")
+
+        # Add plot settings image
+        self._add_help_image(frame, "help_images/example_lithology_juxtaposition_plot.png", 
+                             caption="Figure 10: Example of lithology juxtaposition plot")
+
+        self._add_help_section(frame, "8. Lithology Juxtaposition Plot", heading_font, body_font,
+            """
+
+Lithology Juxtaposition Plot:
+• Displays which lithology types are juxtaposed using the lithology color definitions in the 'Plot Settings' tab
+• Colors for the footwall and haning wall zones are displayed with 50% transparency to visualize overlap
+• Footwall horizons: Solid lines with ▲ markers
+• Hangingwall horizons: Dashed lines with ▼ markers""")
+
+
+        # Add plot settings image
+        self._add_help_image(frame, "help_images/example_juxtaposition_scenario_plot.png", 
+                             caption="Figure 11: Example of juxtaposition scenario plot")
+
+        self._add_help_section(frame, "9. Juxtaposition Scenario Plot", heading_font, body_font,
+            """
+
+Juxtaposition Scenario Plot:
+• Displays classified juxtaposition types based on lithology definitions in the 'Plot Settings' tab
+• Different colors represent different juxtaposition types (e.g. Good Res-Good Res, Good Res-Poor Res, etc.)
+• Colors only present in areas of juxtaposition between footwall and haning wall
+• Red markers indicate the apex point of each juxtaposition scenario; mouse-over to get juxtaposition information
+• Apex IDs correspond to Juxtaposition Scenarios entered in the 'Output tables' tab""")
+        
+        # Add example juxtaposition plot image
+        self._add_help_image(frame, "help_images/example_output_tables.png",
+                           caption="Figure 12: Example juxtaposition plot showing footwall and hanging wall horizons")
+        
+        
+        # Section 10: Exporting
+        self._add_help_section(frame, "10. Exporting Results", heading_font, body_font,
+            """Copy to Clipboard:
+• Edit menu → Copy [Plot Type] to Clipboard
+• Paste directly into PowerPoint, Word, etc.
+• High-resolution images maintained
+
+Export All Plots:
+• File menu → Export All Plots
+• Saves all three plots as PNG files
+• Automatic naming with timestamp
+
+Export Data:
+• CSV export buttons in each tab
+• Length/depth data
+• Juxtaposition results
+• Scenario analysis data
+
+Session Management:
+• File menu → Save Session
+• Saves all data, settings, and plots
+• Load Session restores complete state""")
+        
+        # Section 11: Session Management
+        self._add_help_section(frame, "11. Session Management", heading_font, body_font,
+            """Save Session:
+• File menu → Save Session
+• Saves .pkl file with all data:
+  - Loaded horizon files
+  - Converted length/depth data
+  - Horizon shifts
+  - Color assignments
+  - Plot settings
+  - Current state
+
+Load Session:
+• File menu → Load Session
+• Select previously saved .pkl file
+• Restores complete working state
+• Continue work from where you left off
+
+Reset Application:
+• File menu → Reset Application
+• Clears all data and plots
+• Returns to initial state
+• Useful for starting new analysis
+
+Keyboard Shortcuts:
+• Ctrl+S: Save Session
+• Ctrl+O: Load Session
+• Ctrl+Q: Quit Application
+• F1: Show Help (this window)""")
+        
+        # Tips and Best Practices
+        tips_frame = ttk.LabelFrame(frame, text="💡 Tips and Best Practices", padding=10)
+        tips_frame.pack(fill='x', padx=20, pady=10)
+        
+        tips_text = """• Save your session frequently to preserve work
+• Use consistent units throughout (all meters or all feet)
+• Check QC Plot after conversion to verify data quality
+• Start with no horizon shifts, then test scenarios
+• Use descriptive plot names for documentation
+• Export plots at high resolution for publications, e.g. as .svg files
+• Color-code horizons by formation for clarity
+• Review mean strike/dip values for quality control"""
+        
+        tips_label = ttk.Label(tips_frame, text=tips_text, font=body_font, justify='left')
+        tips_label.pack(anchor='w')
+        
+        # Troubleshooting
+        trouble_frame = ttk.LabelFrame(frame, text="⚠️ Troubleshooting", padding=10)
+        trouble_frame.pack(fill='x', padx=20, pady=10)
+        
+        trouble_text = """Problem: Plots are blank or incomplete
+Solution: Check that horizons were converted to length/depth first
+
+Problem: Colors don't match between plots
+Solution: Use Edit Horizon Colors to standardize colors
+
+Problem: Data looks incorrect
+Solution: Check Z-axis interpretation (Depth vs Elevation)
+
+Problem: Plot not showing after loading session
+Solution: Click 'Generate All Plots' to refresh
+
+Problem: Application is slow
+Solution: Reduce number of data points or plot size"""
+        
+        trouble_label = ttk.Label(trouble_frame, text=trouble_text, font=body_font, justify='left')
+        trouble_label.pack(anchor='w')
+        
+        # Footer
+        footer_label = ttk.Label(frame, 
+                                text=f"EFA Juxtaposition Analysis {self.VERSION} | © 2025 John-Are Hansen",
+                                font=('Arial', 9), foreground='gray')
+        footer_label.pack(pady=(20, 20))
+    
+    def _add_help_section(self, parent, title, title_font, body_font, content):
+        """Helper method to add a formatted help section"""
+        # Section frame
+        section_frame = ttk.Frame(parent)
+        section_frame.pack(fill='x', padx=20, pady=10)
+        
+        # Section title
+        title_label = ttk.Label(section_frame, text=title, font=title_font, 
+                               foreground='#0066cc')
+        title_label.pack(anchor='w', pady=(5, 5))
+        
+        # Section content
+        content_label = ttk.Label(section_frame, text=content, font=body_font, 
+                                 justify='left', wraplength=800)
+        content_label.pack(anchor='w', padx=10)
+        
+        # Separator
+        ttk.Separator(section_frame, orient='horizontal').pack(fill='x', pady=(10, 0))
+    
+    def _add_help_image(self, parent, image_path, caption=None, max_width=700):
+        """Helper method to embed an image in the help window
+        
+        Args:
+            parent: Parent frame to add image to
+            image_path: Path to image file (PNG, JPG, etc.)
+            caption: Optional caption text below image
+            max_width: Maximum width for image (maintains aspect ratio)
+        
+        Returns:
+            Label widget containing the image (or None if error)
+        """
+        try:
+            # Create frame for image
+            img_frame = ttk.Frame(parent)
+            img_frame.pack(fill='x', padx=20, pady=10)
+            
+            # Load and resize image
+            img = Image.open(image_path)
+            
+            # Calculate new size maintaining aspect ratio
+            width, height = img.size
+            if width > max_width:
+                ratio = max_width / width
+                new_width = max_width
+                new_height = int(height * ratio)
+                img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            
+            # Convert to PhotoImage
+            photo = ImageTk.PhotoImage(img)
+            
+            # Create label with image
+            img_label = ttk.Label(img_frame, image=photo)
+            img_label.image = photo  # Keep a reference to prevent garbage collection
+            img_label.pack(pady=5)
+            
+            # Add caption if provided
+            if caption:
+                caption_label = ttk.Label(img_frame, text=caption, 
+                                         font=('Arial', 9, 'italic'),
+                                         foreground='gray')
+                caption_label.pack(pady=(0, 5))
+            
+            return img_label
+            
+        except FileNotFoundError:
+            # If image file not found, show placeholder
+            placeholder = ttk.Label(parent, 
+                                   text=f"[Image: {image_path} - Not Found]",
+                                   font=('Arial', 9, 'italic'),
+                                   foreground='orange')
+            placeholder.pack(padx=20, pady=5)
+            return None
+        except Exception as e:
+            # Handle other errors gracefully
+            error_label = ttk.Label(parent, 
+                                   text=f"[Image Error: {str(e)}]",
+                                   font=('Arial', 9, 'italic'),
+                                   foreground='red')
+            error_label.pack(padx=20, pady=5)
+            return None
+    
+    def show_shortcuts(self):
+        """Display keyboard shortcuts window"""
+        shortcuts_window = tk.Toplevel(self)
+        shortcuts_window.title("Keyboard Shortcuts")
+        try:
+            shortcuts_window.iconbitmap('help_images/efa_icon.ico')
+        except (FileNotFoundError, tk.TclError):
+            # Icon file not found or invalid - continue without icon
+            pass
+        shortcuts_window.geometry("500x400")
+        
+        # Create frame
+        frame = ttk.Frame(shortcuts_window, padding=20)
+        frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Title
+        title_label = ttk.Label(frame, text="Keyboard Shortcuts", 
+                               font=('Arial', 14, 'bold'))
+        title_label.pack(pady=(0, 20))
+        
+        # Create shortcuts text
+        shortcuts_text = tk.Text(frame, wrap=tk.WORD, font=('Courier', 10), 
+                                height=20, width=60)
+        shortcuts_text.pack(fill=tk.BOTH, expand=True)
+        
+        # Add shortcuts content
+        shortcuts_content = """FILE OPERATIONS
+Ctrl+S          Save Session
+Ctrl+O          Load Session  
+Ctrl+Q          Quit Application
+Ctrl+R          Reset Application
+
+CLIPBOARD OPERATIONS
+Ctrl+C          Copy Active Plot to Clipboard
+Ctrl+Shift+T    Copy Throw Plot
+Ctrl+Shift+J    Copy Juxtaposition Plot
+Ctrl+Shift+S    Copy Scenario Plot
+Ctrl+Shift+L    Copy Legend
+
+VIEW OPERATIONS
+F5              Refresh All Plots
+Ctrl+L          Toggle Grid Lines
+Ctrl++          Increase Plot Size
+Ctrl+-          Decrease Plot Size
+
+HELP
+F1              Show Help (User Guide)
+Shift+F1        Show Keyboard Shortcuts
+Ctrl+?          About Dialog
+
+NAVIGATION
+Ctrl+Tab        Next Tab
+Ctrl+Shift+Tab  Previous Tab
+Alt+1           Data Input Tab
+Alt+2           Length/Depth Tab
+Alt+3           Horizon Shifts Tab
+Alt+4           QC Plot Tab
+"""
+        
+        shortcuts_text.insert('1.0', shortcuts_content)
+        shortcuts_text.config(state='disabled')
+        
+        # Close button
+        ttk.Button(frame, text="Close", 
+                  command=shortcuts_window.destroy).pack(pady=(10, 0))
+
+    def create_throw_legend(self, hcolor_df):
+        """
+        Create a legend for the throw profile plot.
+        """
+        legend_items = []
+        legend_items.append(Patch(facecolor='white', edgecolor='white', label='Horizons'))
+        for index, row in hcolor_df.iterrows():
+            horizon_label = row['Alias'] if row['Alias'] else row['Horizon']
+            legend_items.append(Line2D([0], [0], color=row['Color'], lw=1, label=horizon_label))
+        
+        # Add mean throw if it's typically shown
+        legend_items.append(Line2D([0], [0], color='black', linestyle='dotted', lw=1, label='Mean Throw'))
+        
+        fig, ax = plt.subplots(figsize=(6, 8))
+        ax.legend(handles=legend_items, loc='upper left')
+        ax.get_xaxis().set_visible(False)
+        ax.get_yaxis().set_visible(False)
+        ax.axis('off')
+        return fig
+
+    def create_unit_legend(self, hcolor_df):
+        """
+        Create a legend for the juxtaposition unit plot using stored legend handles.
+        Uses the exact legend from zone_unit_plot_method if available, otherwise creates from scratch.
+        """
+        # If we have stored legend handles from the actual plot, use those
+        if hasattr(self, 'unitlegend_handles') and hasattr(self, 'unitlegend_labels'):
+            legend_items = self.unitlegend_handles
+            labels = self.unitlegend_labels
+        else:
+            # Fallback to creating legend from scratch
+            legend_items = []
+            legend_items.append(Patch(facecolor='white', edgecolor='white', label='Horizons'))
+            for index, row in hcolor_df.iterrows():
+                legend_items.append(Line2D([0], [0], color=row['Color'], lw=1, label=row['Alias'] + ' (FW)'))
+                legend_items.append(Line2D([0], [0], color=row['Color'], linestyle='--', lw=1, label=row['Alias'] + ' (HW)'))
+            
+            legend_items.append(Patch(facecolor='white', edgecolor='white', label=''))
+            legend_items.append(Patch(facecolor='white', edgecolor='white', label='Zone Unit Colors'))
+            # Add zone unit colors
+            if hasattr(self, 'zone_unit_colors'):
+                for unit, color in self.zone_unit_colors.items():
+                    legend_items.append(Patch(facecolor=color, edgecolor=color, label=unit))
+            labels = [item.get_label() for item in legend_items]
+        
+        fig, ax = plt.subplots(figsize=(6, 8))
+        ax.legend(handles=legend_items, labels=labels, loc='upper left')
+        ax.get_xaxis().set_visible(False)
+        ax.get_yaxis().set_visible(False)
+        ax.axis('off')
+        return fig
+
+    def create_lithology_legend(self, hcolor_df, zcolor_df):
+        """
+        Create a legend for the juxtaposition lithology plot.
+        """
+        legend_items = []
+        legend_items.append(Patch(facecolor='white', edgecolor='white', label='Horizons'))
+        for index, row in hcolor_df.iterrows():
+            legend_items.append(Line2D([0], [0], color=row['Color'], lw=1, label=row['Alias'] + ' (FW)'))
+            legend_items.append(Line2D([0], [0], color=row['Color'], linestyle='--', lw=1, label=row['Alias'] + ' (HW)'))
+        
+        legend_items.append(Patch(facecolor='white', edgecolor='white', label=''))
+        legend_items.append(Patch(facecolor='white', edgecolor='white', label='Zone Lithology'))
+        for index, row in zcolor_df.iterrows():
+            ztype = ' (No Res.)'
+            if row['Color'] == 'orange':
+                ztype = ' (Poor Res.)'
+            elif row['Color'] == 'yellow':
+                ztype = ' (Good Res.)'
+            elif row['Color'] == 'red':
+                ztype = ' (SR)'
+            elif row['Color'] == 'azure':
+                ztype = ' (Undefined)'
+            legend_items.append(Patch(facecolor=row['Color'], alpha=0.5, edgecolor=row['Color'], 
+                                     label=row['Alias'] + ztype))
+        
+        fig, ax = plt.subplots(figsize=(6, 8))
+        ax.legend(handles=legend_items, loc='upper left')
+        ax.get_xaxis().set_visible(False)
+        ax.get_yaxis().set_visible(False)
+        ax.axis('off')
+        return fig
+
+    def create_scenario_legend(self, hcolor_df):
+        """
+        Create a legend for the juxtaposition scenario plot.
+        """
+        legend_items = []
+        legend_items.append(Patch(facecolor='white', edgecolor='white', label='Horizons'))
+        for index, row in hcolor_df.iterrows():
+            legend_items.append(Line2D([0], [0], color=row['Color'], lw=1, label=row['Alias'] + ' (FW)'))
+            legend_items.append(Line2D([0], [0], color=row['Color'], linestyle='--', lw=1, label=row['Alias'] + ' (HW)'))
+        
+        legend_items.append(Patch(facecolor='white', edgecolor='white', label=''))
+        legend_items.append(Patch(facecolor='white', edgecolor='white', label='Juxtaposition Scenario'))
+        legend_items.append(Patch(facecolor='green', edgecolor='green', label='Good-Good'))
+        legend_items.append(Patch(facecolor='yellow', edgecolor='yellow', label='Good-Poor'))
+        legend_items.append(Patch(facecolor='orange', edgecolor='orange', label='Poor-Poor'))
+        legend_items.append(Patch(facecolor='black', edgecolor='black', label='SR-res'))
+        legend_items.append(Patch(facecolor='LightGray', edgecolor='LightGray', label='Res-noRes'))
+        legend_items.append(Patch(facecolor='DarkGray', edgecolor='DarkGray', label='noRes-noRes'))
+        legend_items.append(Patch(facecolor='azure', edgecolor='azure', label='Undefined-Any'))
+        
+        fig, ax = plt.subplots(figsize=(6, 8))
+        ax.legend(handles=legend_items, loc='upper left')
+        ax.get_xaxis().set_visible(False)
+        ax.get_yaxis().set_visible(False)
+        ax.axis('off')
+        return fig
+
+ 
 
 # add used functions with children from efa_app_functions below
 
@@ -2696,8 +4998,8 @@ def strikedip(Vn):
         strike = 270 - azimuth
     else:
         strike = 666 # This seems to occur when the when the normal vector to the triangle has zero length, and happens if two of the three coordinates in the triangle are equal. Should be discarded from dataset.
-        print('check')
-        print(Vn)
+        #print('check')
+        #print(Vn)
     return(strike, dip)
 
 
@@ -2711,49 +5013,6 @@ def planefit(points):
     left = svd[0]
     return(left[:,-1])
 
-
-def hlegend(hcolor_df,zcolor_df):
-    """
-    Create a legend for the horizon plots.
-    """
-    custum_legend = []
-    custum_legend.append(Patch(facecolor='white', edgecolor='white', label='Horizons'))
-    for index, row in hcolor_df.iterrows():
-        #custum_legend.append(Line2D([0], [0], color=hcolor_df[i-1], lw=1, label=list(fv_df)[i]+'_footwall'))
-        custum_legend.append(Line2D([0], [0], color=row['Color'], lw=1, label = row['Alias'] +'_footwall'))
-        custum_legend.append(Line2D([0], [0], color=row['Color'],linestyle='--', lw=1, label = row['Alias'] +'_hangingwall'))
-        #print(index)
-        #print(row)
-    custum_legend.append(Patch(facecolor='white', edgecolor='white', label=''))
-    custum_legend.append(Patch(facecolor='white', edgecolor='white', label='Zone Lithology'))
-    for index, row in zcolor_df.iterrows():
-        ztype = '_No Res.'
-        if row['Color'] == 'orange':
-            ztype = '_Poor Res.'
-        elif row['Color'] == 'yellow':
-            ztype = '_Good Res.'
-        elif row['Color'] == 'red':
-            ztype = '_SR'
-        elif row['Color'] == 'azure':
-            ztype = '_Undefined'
-        custum_legend.append(Patch(facecolor=row['Color'], alpha = 0.5,edgecolor=row['Color'], label=row['Alias'] + ztype))
-    # Fixed symbol patches below
-    custum_legend.append(Patch(facecolor='white', edgecolor='white', label=''))
-    custum_legend.append(Patch(facecolor='white', edgecolor='white', label='Juxtaposition Scenario'))
-    custum_legend.append(Patch(facecolor='green', edgecolor='green', label='Good-Good'))
-    custum_legend.append(Patch(facecolor='yellow', edgecolor='yellow', label='Good-Poor'))
-    #custum_legend.append(Patch(facecolor='red', edgecolor='red', label='Intermediate-Intermediate'))
-    custum_legend.append(Patch(facecolor='orange', edgecolor='orange',label='Poor-Poor'))#changed from red to orange as requested
-    custum_legend.append(Patch(facecolor='black', edgecolor='black', label='SR-res'))
-    custum_legend.append(Patch(facecolor='LightGray', edgecolor='LightGray', label='Res-noRes'))
-    custum_legend.append(Patch(facecolor='DarkGray', edgecolor='DarkGray', label='noRes-noRes'))
-    custum_legend.append(Patch(facecolor='azure', edgecolor='azure', label='Undefined-Any'))
-    fig, ax = plt.subplots()
-    ax.legend(handles=custum_legend,loc='upper left')
-    ax.get_xaxis().set_visible(False)
-    ax.get_yaxis().set_visible(False)
-    ax.axis('off')
-    return(fig)
 
 
 def xyz2ld(datadict, z = 'Depth 1', data_format = 'Petrel_FC'):
@@ -3067,12 +5326,48 @@ def juxtaposition_color(zfv_color,zhv_color):
     return(new_color,fv_type,hv_type)
 
 
-def interpolate_throw(fv_df, juxt_df, throwarray):
-    int_throw = interpolate.interp1d(fv_df['length'], throwarray.mean(0))
+def interpolate_throw(fv_df, juxt_df, throwarray, h_color=None):
+    """
+    Interpolate throw values at juxtaposition apex points.
+    
+    Args:
+        fv_df: Footwall dataframe with 'length' column
+        juxt_df: Juxtaposition dataframe with 'Length' column
+        throwarray: 2D numpy array where each row is throw for one horizon
+        h_color: Horizon color dataframe with 'Horizon' and 'Alias' columns (optional)
+    
+    Returns:
+        juxt_df with added throw columns for each horizon plus mean throw
+    """
     lenlist = juxt_df['Length'].tolist()
-    lenthrow = int_throw(lenlist)
-    juxt_df['Mean_Throw'] = lenthrow.round(2)
-    return(juxt_df)
+    
+    # Add individual horizon throw columns
+    for i in range(throwarray.shape[0]):
+        # Interpolate throw for this horizon
+        int_throw = interpolate.interp1d(fv_df['length'], throwarray[i, :], 
+                                         bounds_error=False, fill_value=np.nan)
+        horizon_throw = int_throw(lenlist)
+        
+        # Create column name using alias if available, otherwise use index
+        if h_color is not None and i < len(h_color):
+            horizon_name = h_color.loc[i, 'Alias'] if h_color.loc[i, 'Alias'] else h_color.loc[i, 'Horizon']
+            col_name = f'Throw_{horizon_name}'
+        else:
+            col_name = f'Throw_H{i+1}'
+        
+        juxt_df[col_name] = horizon_throw.round(2)
+    
+    # Add mean throw column at the end
+    # Suppress RuntimeWarning about mean of empty slice (happens when all values are NaN)
+    with warnings.catch_warnings():
+        warnings.filterwarnings('ignore', category=RuntimeWarning)
+        mean_throw_array = np.nanmean(throwarray, axis=0)
+    int_throw_mean = interpolate.interp1d(fv_df['length'], mean_throw_array,
+                                         bounds_error=False, fill_value=np.nan)
+    lenthrow_mean = int_throw_mean(lenlist)
+    juxt_df['Mean_Throw'] = lenthrow_mean.round(2)
+    
+    return juxt_df
 
 
 def main():

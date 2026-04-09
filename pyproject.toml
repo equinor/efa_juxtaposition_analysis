@@ -3,7 +3,7 @@ name = "efa-juxtaposition-analysis"
 version = "0.9.6"
 description = "Geology application to quickly analyze fault juxtaposition for single faults by creating throw profiles and juxtaposition (Allan) diagrams"
 authors = [
-    {name = "John-Are Hansen", email = "jareh@equinor.com"}
+    {name = "John-Are Hansen"}
 ]
 readme = "README.md"
 license = {text = "GPL-3.0-or-later"}
