@@ -51,7 +51,25 @@ uv run python efa_juxtaposition_app/EFA_juxtaposition_v0p9p6.py
 - Double-click `efa_juxtaposition_app/EFA_juxtaposition_launcher.bat`
 - Or use the advanced launcher: `efa_juxtaposition_app/EFA_juxtaposition_launcher_advanced.bat`
 
-### Option 2: Direct Installation from GitHub (No Git Required)
+### Option 2: Clone Repository + Install with uv
+
+If you want to install dependencies directly with uv after cloning:
+
+```bash
+git clone https://github.com/equinor/efa_juxtaposition_analysis.git
+cd efa_juxtaposition_analysis
+
+# Install dependencies
+uv sync
+
+# Optional: include Windows-specific dependencies
+uv sync --extra windows
+
+# Run the application
+uv run python efa_juxtaposition_app/EFA_juxtaposition_app.py
+```
+
+### Option 3: Direct Installation from GitHub (No Git Required)
 
 If you don't have Git installed or prefer not to clone the repository:
 
@@ -85,7 +103,7 @@ uv run efa-juxtaposition
    uv run python efa_juxtaposition_app/EFA_juxtaposition_v0p9p6.py
    ```
 
-### Option 3: Manual Download of Files (Minimal Setup)
+### Option 4: Manual Download of Files (Minimal Setup)
 
 If you only need the core application files:
 
@@ -110,7 +128,7 @@ uv add numpy pandas matplotlib scipy shapely pillow
 uv run python EFA_juxtaposition_v0p9p6.py
 ```
 
-### Option 4: Using uv with Remote Execution
+### Option 5: Using uv with Remote Execution
 
 Run the application directly from GitHub without local installation:
 
@@ -127,7 +145,7 @@ curl -sSL https://raw.githubusercontent.com/equinor/efa_juxtaposition_analysis/m
 uv run python EFA_juxtaposition.py
 ```
 
-### Option 5: Using uv Scripts (Advanced)
+### Option 6: Using uv Scripts (Advanced)
 
 Create a standalone script that can be run anywhere:
 
@@ -184,6 +202,7 @@ python run_efa.py
 | Method | Pros | Cons | Best For |
 |--------|------|------|----------|
 | **Git Clone** | Full repository, easy updates, includes test data | Requires Git | Developers, regular users |
+| **Clone + uv sync** | Full repository with explicit dependency control | More manual steps than setup scripts | Users who want transparent installs |
 | **Direct GitHub Install** | Simple one-liner | Less control over versions | Quick testing |
 | **Download ZIP** | No Git required, full repository | Manual updates | Users without Git |
 | **Manual Download** | Minimal footprint | Missing extras (test data, launchers) | Minimal installations |

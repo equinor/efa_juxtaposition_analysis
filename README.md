@@ -24,12 +24,26 @@ If you clone this repository, you can use the automated setup scripts:
 setup.bat
 ```
 
-**For Linux/macOS:**
+
+**Option 2: Clone Repository + Install with uv**
+
+If you prefer to install dependencies directly with uv after cloning:
+
 ```bash
-./setup.sh
+git clone https://github.com/equinor/efa_juxtaposition_analysis.git
+cd efa_juxtaposition_analysis
+
+# Install dependencies
+uv sync
+
+# Optional: include Windows-specific dependencies
+uv sync --extra windows
+
+# Run the application
+uv run python efa_juxtaposition_app/EFA_juxtaposition_app.py
 ```
 
-**Option 2: Direct Installation (No Git Required)**
+**Option 3: Direct Installation (No Git Required)**
 
 Download and run the installer script:
 ```bash
@@ -40,7 +54,7 @@ curl -sSL https://raw.githubusercontent.com/equinor/efa_juxtaposition_analysis/m
 python install_efa.py
 ```
 
-**Option 3: Install as uv Tool**
+**Option 4: Install as uv Tool**
 ```bash
 uv tool install git+https://github.com/equinor/efa_juxtaposition_analysis.git
 efa-juxtaposition  # Run the application
@@ -99,10 +113,11 @@ More information abut installing python using uv can be found at the Equinor wik
 
 ## Launching the Application
 
+
 ### Option 1: Using Batch File (Recommended)
 The application can be launched by double-clicking one of the provided batch files:
 - **EFA_juxtaposition_launcher.bat** - Basic launcher with dependency checks
-- **EFA_juxtaposition_launcher_advanced.bat** - Advanced launcher with detailed reporting
+
 
 Both batch files will:
 - Check if uv is installed
