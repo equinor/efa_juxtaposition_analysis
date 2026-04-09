@@ -370,5 +370,5 @@ After successful installation:
 
 ---
 
-**Copyright (C) 2025 John-Are Hansen**  
-Licensed under GPL v3.0 - see LICENSE file for details
+**Copyright (C) 2025 Equinor ASA**  
+Licensed under the MIT License - see LICENSE file for details
