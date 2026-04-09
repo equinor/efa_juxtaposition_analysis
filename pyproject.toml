@@ -1,18 +1,18 @@
 [project]
 name = "efa-juxtaposition-analysis"
-version = "0.9.6"
-description = "Geology application to quickly analyze fault juxtaposition for single faults by creating throw profiles and juxtaposition (Allan) diagrams"
+version = "1.0.1"
+description = "Fault juxtaposition analysis for single faults using throw profiles and juxtaposition (Allan) diagrams"
 authors = [
     {name = "John-Are Hansen"}
 ]
 readme = "README.md"
-license = {text = "GPL-3.0-or-later"}
+license = {text = "MIT"}
 requires-python = ">=3.8"
 keywords = ["geology", "fault-analysis", "juxtaposition", "petrel", "geoscience"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+    "License :: OSI Approved :: MIT License",
     "Operating System :: Microsoft :: Windows",
     "Operating System :: POSIX :: Linux",
     "Operating System :: MacOS",
