@@ -4137,7 +4137,7 @@ copies of the Software.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
 
-© 2025 - John-Are Hansen"""
+© 2025 - Equinor ASA"""
         messagebox.showinfo("About EFA", about_text)
     
     def show_help(self):
@@ -4513,7 +4513,7 @@ Solution: Reduce number of data points or plot size"""
         
         # Footer
         footer_label = ttk.Label(frame, 
-                                text=f"EFA Juxtaposition Analysis {self.VERSION} | © 2025 John-Are Hansen",
+                                text=f"EFA Juxtaposition Analysis {self.VERSION} | © 2025 Equinor ASA | Author: {self.AUTHOR}",
                                 font=('Arial', 9), foreground='gray')
         footer_label.pack(pady=(20, 20))
     
