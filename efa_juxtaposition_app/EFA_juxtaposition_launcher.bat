@@ -9,8 +9,9 @@ echo EFA Juxtaposition Analysis Launcher
 echo ================================
 echo.
 
-REM Set the application directory
-set APP_DIR=c:\Appl\efa_uv_app
+REM Set the application directory to the parent folder (project root)
+cd /d "%~dp0.."
+set APP_DIR=%cd%
 
 REM Check if uv is installed
 echo [1/6] Checking if uv is installed...
@@ -37,9 +38,9 @@ echo ✓ Application directory exists: %APP_DIR%
 
 REM Check if Python application file exists
 echo [3/6] Checking for Python application file...
-if not exist "%APP_DIR%\EFA_juxtaposition_v0p9p6.py" (
-    echo ERROR: Python application file not found: %APP_DIR%\EFA_juxtaposition_v0p9p6.py
-    echo Please download and copy the application file to the directory
+if not exist "%APP_DIR%\efa_juxtaposition_app\EFA_juxtaposition_app.py" (
+    echo ERROR: Python application file not found: %APP_DIR%\efa_juxtaposition_app\EFA_juxtaposition_app.py
+    echo Please ensure the application file is in the efa_juxtaposition_app subfolder
     echo.
     pause
     exit /b 1
@@ -51,7 +52,7 @@ echo [4/6] Checking for uv project configuration...
 if not exist "%APP_DIR%\pyproject.toml" (
     echo ERROR: uv project configuration not found: %APP_DIR%\pyproject.toml
     echo This suggests the application was not properly initialized with uv
-    echo Please run: uv init efa_uv_app in c:\Appl\
+    echo Please run: uv init efa_juxtaposition_analysis in c:\Appl\
     echo.
     pause
     exit /b 1
@@ -91,7 +92,7 @@ echo Starting application... (this may take a few moments)
 echo To close the application, close the GUI window or press Ctrl+C in this terminal
 echo.
 
-uv run EFA_juxtaposition_app.py
+uv run efa_juxtaposition_app/EFA_juxtaposition_app.py
 
 REM Check if the application started successfully
 if %errorlevel% neq 0 (
