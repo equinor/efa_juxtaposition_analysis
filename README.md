@@ -19,16 +19,7 @@ Fault juxtaposition analysis for single faults using throw profiles and juxtapos
 **Option 1: Download Pre-built Application**
 Download the latest pre-built version from [Releases](https://github.com/equinor/efa_juxtaposition_analysis/releases) and run it directly - no installation required.
 
-**Option 2: Clone Repository**
-If you clone this repository, you can use the automated setup scripts:
-
-**For Windows:**
-```cmd
-setup.bat
-```
-
-
-**Option 3: Clone Repository + Install with uv**
+**Option 2: Clone Repository + Install with uv**
 
 If you prefer to install dependencies directly with uv after cloning:
 
@@ -46,7 +37,7 @@ uv sync --extra windows
 uv run python efa_juxtaposition_app/EFA_juxtaposition_app.py
 ```
 
-**Option 4: Direct Installation (No Git Required)**
+**Option 3: Direct Installation (No Git Required)**
 
 Download and run the installer script:
 ```bash
@@ -57,7 +48,7 @@ curl -sSL https://raw.githubusercontent.com/equinor/efa_juxtaposition_analysis/m
 python install_efa.py
 ```
 
-**Option 5: Install as uv Tool**
+**Option 4: Install as uv Tool**
 ```bash
 uv tool install git+https://github.com/equinor/efa_juxtaposition_analysis.git
 efa-juxtaposition  # Run the application
@@ -69,7 +60,6 @@ These scripts will:
 - Set up the virtual environment
 - Install platform-specific dependencies (Windows clipboard support, etc.)
 
-📖 **For detailed installation options (including methods without Git), see [SETUP.md](SETUP.md)**
 
 ### Manual Installation
 
