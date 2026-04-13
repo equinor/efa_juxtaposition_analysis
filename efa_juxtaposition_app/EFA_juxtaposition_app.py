@@ -46,6 +46,7 @@ import warnings
 import pickle
 from PIL import Image, ImageTk
 import io
+import os
 
 # Optional Windows clipboard support
 try:
@@ -63,11 +64,17 @@ class EFA_juxtaposition(tk.Tk):
 
     def __init__(self):
         super().__init__()
+        
+        # Set up path to help_images folder relative to this script
+        self.script_dir = os.path.dirname(os.path.abspath(__file__))
+        self.help_images_dir = os.path.join(self.script_dir, 'help_images')
+        
         self.title(f"EFA Juxtaposition Analysis v{self.VERSION}")
         
         # Set icon if available, otherwise continue without it
         try:
-            self.iconbitmap("help_images/efa_icon.ico")
+            icon_path = os.path.join(self.help_images_dir, 'efa_icon.ico')
+            self.iconbitmap(icon_path)
         except (FileNotFoundError, tk.TclError):
             # Icon file not found or invalid - continue without icon
             pass
@@ -132,6 +139,10 @@ class EFA_juxtaposition(tk.Tk):
         self.current_legend_fig = None
         
         self.create_widgets()
+    
+    def get_resource_path(self, filename):
+        """Get the full path to a resource file in the help_images directory."""
+        return os.path.join(self.help_images_dir, filename)
         
     def create_widgets(self):
         # Create menu bar
@@ -319,7 +330,7 @@ class EFA_juxtaposition(tk.Tk):
         edit_win = tk.Toplevel(self)
         edit_win.title("Edit File Order")
         try:
-            edit_win.iconbitmap("help_images/efa_icon.ico")
+            edit_win.iconbitmap(self.get_resource_path('efa_icon.ico'))
         except (FileNotFoundError, tk.TclError):
             # Icon file not found or invalid - continue without icon
             pass
@@ -820,7 +831,7 @@ class EFA_juxtaposition(tk.Tk):
         win = tk.Toplevel(self)
         win.title("Horizon Shift Settings")
         try:
-            win.iconbitmap("help_images/efa_icon.ico")
+            win.iconbitmap(self.get_resource_path('efa_icon.ico'))
         except (FileNotFoundError, tk.TclError):
             # Icon file not found or invalid - continue without icon
             pass
@@ -4145,7 +4156,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
         help_window = tk.Toplevel(self)
         help_window.title("EFA Juxtaposition Analysis - User Guide")
         try:
-            help_window.iconbitmap('help_images/efa_icon.ico')
+            help_window.iconbitmap(self.get_resource_path('efa_icon.ico'))
         except (FileNotFoundError, tk.TclError):
             # Icon file not found or invalid - continue without icon
             pass
@@ -4240,11 +4251,11 @@ Key Concepts:
 • Fault Contact points (FC points): The Footwall and haning wall intersection points between a seismic horizon and the fault plane""")
         
         # Add fault diagram image
-        self._add_help_image(frame, "help_images/fault_diagram.png", 
+        self._add_help_image(frame, self.get_resource_path('fault_diagram.png'), 
                              caption="Figure 1: Relationship between footwall, hanging wall, fault plane, and fault contact points")
         
         # Add ada load image
-        self._add_help_image(frame, "help_images/example_datainput.png", 
+        self._add_help_image(frame, self.get_resource_path('example_datainput.png'), 
                              caption="Figure 2: Example of data import and preview")
 
         # Section 2: Loading Data
@@ -4268,7 +4279,7 @@ Step 3: Load data to database
    
 
         # Add qc plot image
-        self._add_help_image(frame, "help_images/example_qcplot.png", 
+        self._add_help_image(frame, self.get_resource_path('example_qcplot.png'), 
                              caption="Figure 3: Example QC plot tab, where throw and juxtaposition of mapped points can be evaluated")
         
         # Section 3: Data conversion and horizon shift
@@ -4312,14 +4323,14 @@ Step 4: click 'Execute Shift'
         
         
         # Horizon shift concept figure
-        self._add_help_image(frame, "help_images/example_HorizonShift.png",
+        self._add_help_image(frame, self.get_resource_path('example_HorizonShift.png'),
                            caption="Figure 4: Example of Horizon Shift Table in the application")
         
         # Horizon shift concept figure
-        self._add_help_image(frame, "help_images/example_Horizon_Shift_Concept.png",
+        self._add_help_image(frame, self.get_resource_path('example_Horizon_Shift_Concept.png'),
                            caption="Figure 5: Conceptual illustration of using a stratigraphic log to define horizon shifts of h1 and h4")
 
-        self._add_help_image(frame, "help_images/example_shift_datatab.png",
+        self._add_help_image(frame, self.get_resource_path('example_shift_datatab.png'),
                            caption="Figure 6: Example of shifted horizons displayed in the 'Shifted Data' tab")
 
 
@@ -4347,7 +4358,7 @@ Step 4: click 'Generate All Plots'
 
 
         # Add plot settings image
-        self._add_help_image(frame, "help_images/example_plot_settings.png", 
+        self._add_help_image(frame, self.get_resource_path('example_plot_settings.png'), 
                              caption="Figure 7: Example of data import and preview")
 
         self._add_help_section(frame, "5. Plot Types", heading_font, body_font,
@@ -4360,7 +4371,7 @@ Step 4: click 'Generate All Plots'
 
 
         # Add plot settings image
-        self._add_help_image(frame, "help_images/example_throw_plot.png", 
+        self._add_help_image(frame, self.get_resource_path('example_throw_plot.png'), 
                              caption="Figure 8: Example of throw profile plot")
 
         self._add_help_section(frame, "6. Throw Plot", heading_font, body_font,
@@ -4374,7 +4385,7 @@ The throw profile plot is displayed in the 'Throw Plot' tab:
 • Note! If a horizon is shifted, the throw will be the same as the original horizon, unless truncated. If a horizon color is missing, it might thus be behind another one.""")
 
         # Add plot settings image
-        self._add_help_image(frame, "help_images/example_zone_juxtaposition_plot.png", 
+        self._add_help_image(frame, self.get_resource_path('example_zone_juxtaposition_plot.png'), 
                              caption="Figure 9: Example of zone juxtaposition plot")
 
         self._add_help_section(frame, "7. Zone Juxtaposition Plot", heading_font, body_font,
@@ -4388,7 +4399,7 @@ The Zone Juxtaposition Plot is displayed in the 'Zone Juxtaposition Plot' tab:
 • Hangingwall horizons: Dashed lines with ▼ markers""")
 
         # Add plot settings image
-        self._add_help_image(frame, "help_images/example_lithology_juxtaposition_plot.png", 
+        self._add_help_image(frame, self.get_resource_path('example_lithology_juxtaposition_plot.png'), 
                              caption="Figure 10: Example of lithology juxtaposition plot")
 
         self._add_help_section(frame, "8. Lithology Juxtaposition Plot", heading_font, body_font,
@@ -4402,7 +4413,7 @@ Lithology Juxtaposition Plot:
 
 
         # Add plot settings image
-        self._add_help_image(frame, "help_images/example_juxtaposition_scenario_plot.png", 
+        self._add_help_image(frame, self.get_resource_path('example_juxtaposition_scenario_plot.png'), 
                              caption="Figure 11: Example of juxtaposition scenario plot")
 
         self._add_help_section(frame, "9. Juxtaposition Scenario Plot", heading_font, body_font,
@@ -4416,7 +4427,7 @@ Juxtaposition Scenario Plot:
 • Apex IDs correspond to Juxtaposition Scenarios entered in the 'Output tables' tab""")
         
         # Add example juxtaposition plot image
-        self._add_help_image(frame, "help_images/example_output_tables.png",
+        self._add_help_image(frame, self.get_resource_path('example_output_tables.png'),
                            caption="Figure 12: Example juxtaposition plot showing footwall and hanging wall horizons")
         
         
@@ -4603,7 +4614,7 @@ Solution: Reduce number of data points or plot size"""
         shortcuts_window = tk.Toplevel(self)
         shortcuts_window.title("Keyboard Shortcuts")
         try:
-            shortcuts_window.iconbitmap('help_images/efa_icon.ico')
+            shortcuts_window.iconbitmap(self.get_resource_path('efa_icon.ico'))
         except (FileNotFoundError, tk.TclError):
             # Icon file not found or invalid - continue without icon
             pass
