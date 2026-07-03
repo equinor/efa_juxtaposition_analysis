@@ -98,7 +98,7 @@ More information abut installing python using uv can be found at the Equinor wik
    ```
 
 6. Download the application files from GitHub:
-   - [EFA_juxtaposition_v0p9p6.py](./efa_juxtaposition_app/EFA_juxtaposition_app.py)
+   - [EFA_juxtaposition_app.py](./efa_juxtaposition_app/EFA_juxtaposition_app.py)
    - [EFA_juxtaposition_launcher.bat](./efa_juxtaposition_app/EFA_juxtaposition_launcher.bat)
 
    
@@ -169,8 +169,8 @@ Launch the application and use the tabbed interface to:
 
 ## Version
 
-**Version:** 1.0.1  
-**Build Date:** 2026-02-19 
+**Version:** 1.0.2  
+**Build Date:** 2026-07-03 
 **Author:** John-Are Hansen
 
 ## License
