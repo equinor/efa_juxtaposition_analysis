@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-EFA Juxtaposition Analysis - fault displacement and zone juxtaposition analysis
+Juxtaposition Analyser (EFA Juxtaposition Analysis) - fault displacement and zone juxtaposition analysis
 
 Copyright (C) 2025 Equinor ASA
 
@@ -26,8 +26,13 @@ SOFTWARE.
 
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog, StringVar, IntVar, BooleanVar, colorchooser
-import matplotlib.pyplot as plt
 import matplotlib
+# Use the non-interactive Agg backend. Figures are created with the pyplot API but are
+# embedded in Tk via FigureCanvasTkAgg. With the interactive 'tkagg' backend, every
+# plt.figure() also spawns its own pyplot-managed canvas/Tk root, producing a second
+# canvas per figure that breaks the embedded toolbar's pan/zoom in newer matplotlib.
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 # Configure matplotlib to manage figure memory better
 matplotlib.rcParams['figure.max_open_warning'] = 0  # Suppress the warning
 plt.ioff()  # Turn off interactive mode to prevent figure accumulation
@@ -58,8 +63,8 @@ except ImportError:
 
 
 class EFA_juxtaposition(tk.Tk):
-    VERSION = "1.0.1"
-    BUILD_DATE = "2026-02-19"
+    VERSION = "1.0.2"
+    BUILD_DATE = "2026-06-22"
     AUTHOR = "John-Are Hansen"
 
     def __init__(self):
@@ -69,7 +74,7 @@ class EFA_juxtaposition(tk.Tk):
         self.script_dir = os.path.dirname(os.path.abspath(__file__))
         self.help_images_dir = os.path.join(self.script_dir, 'help_images')
         
-        self.title(f"EFA Juxtaposition Analysis v{self.VERSION}")
+        self.title(f"Juxtaposition Analyser v{self.VERSION}")
         
         # Set icon if available, otherwise continue without it
         try:
@@ -135,8 +140,12 @@ class EFA_juxtaposition(tk.Tk):
         # Store current figure references for clipboard copying
         self.current_throw_fig = None
         self.current_juxt_fig = None
+        self.current_juxt_unit_fig = None
         self.current_scenario_fig = None
         self.current_legend_fig = None
+        self.current_qc_fig = None
+        # Per-sidebar legend figures, keyed by legend method name.
+        self._legend_figs = {}
         
         self.create_widgets()
     
@@ -250,23 +259,24 @@ class EFA_juxtaposition(tk.Tk):
         self.data_display_frame.pack(side='left', fill='both', expand=True)
         
         # Setup sidebar content
-        ttk.Label(sidebar, text="Juxtaposition Analysis", 
+        ttk.Label(sidebar, text="Data Input", 
                  font=('Arial', 14, 'bold')).pack(pady=10)
         
         # Instructions
         instructions = tk.Text(sidebar, height=3, width=40, wrap=tk.WORD)
-        instructions.insert('1.0', 'Add files ordered from shallowest to deepest horizon - files need to be in "Petrel_points_w_attributes" format')
+        instructions.insert('1.0', 'Add files in stratigraphic order, from shallowest to deepest horizon. See user guide for details.')
         instructions.config(state='disabled')
         instructions.pack(pady=5)
         
-        # File format selection
-        ttk.Label(sidebar, text="File input format:").pack(pady=5)
-        file_format_options = ['Petrel_FC', 'Cegal_FC']
-        ttk.Combobox(sidebar, textvariable=self.file_format, 
-                    values=file_format_options, width=15).pack()
+        # File format selection -- activate if cegal or other formats are added in the future
+        #ttk.Label(sidebar, text="File input format:").pack(pady=5)
+        #file_format_options = ['Petrel_FC', 'Cegal_FC']
+        #ttk.Combobox(sidebar, textvariable=self.file_format, 
+                    #values=file_format_options, width=15).pack()
+        
         
         # File selection buttons
-        load_btn = ttk.Button(sidebar, text="Select Horizon Files", command=self.add_files)
+        load_btn = ttk.Button(sidebar, text="Select Fault Contacts", command=self.add_files)
         load_btn.pack(fill='x', pady=5)
         
         sort_btn = ttk.Button(sidebar, text="Sort File Order", command=self.edit_file_order)
@@ -502,13 +512,13 @@ class EFA_juxtaposition(tk.Tk):
                  font=('Arial', 12, 'bold')).pack(pady=10)
         
         # Z-value selection
-        ttk.Label(sidebar, text="Z-value field:").pack(pady=5)
+        ttk.Label(sidebar, text="Select Z-value field:").pack(pady=5)
         z_options = ['Z', 'TWT auto', 'Depth 1']
         ttk.Combobox(sidebar, textvariable=self.z_select, 
                     values=z_options, width=15).pack()
         
         # Data processing buttons
-        ttk.Button(sidebar, text="Convert to Length/Depth", 
+        ttk.Button(sidebar, text="Flatten and Resample", 
                   command=self.xyz_to_length_depth).pack(fill='x', pady=5)
         
         ttk.Button(sidebar, text="Edit Horizon Shift", 
@@ -528,9 +538,10 @@ class EFA_juxtaposition(tk.Tk):
         self.qc_plot_frame = ttk.Frame(self.data_sub_notebook)
         
         # Add sub-tabs to notebook
-        self.data_sub_notebook.add(self.length_depth_frame, text='Length/Depth Data')
+        self.data_sub_notebook.add(self.mapped_data_frame, text='Flattened Data')
+        self.data_sub_notebook.add(self.length_depth_frame, text='Resampled Data')
         self.data_sub_notebook.add(self.shifted_data_frame, text='Shifted Data')
-        self.data_sub_notebook.add(self.mapped_data_frame, text='Mapped Data')
+        #self.data_sub_notebook.add(self.mapped_data_frame, text='Mapped Data')
         self.data_sub_notebook.add(self.qc_plot_frame, text='QC Plot')
         
         # Setup each sub-tab content
@@ -542,7 +553,7 @@ class EFA_juxtaposition(tk.Tk):
     def setup_length_depth_tab(self):
         """Setup tab 1: Display fv_df and hv_df from xyz_to_length_depth"""
         # Create main container with label
-        ttk.Label(self.length_depth_frame, text="Length/Depth Converted Data", 
+        ttk.Label(self.length_depth_frame, text="Flattened Data resampled to equal spacing (10 m along strike)", 
                  font=('Arial', 12, 'bold')).pack(pady=10)
         
         # Create scrollable container
@@ -551,13 +562,13 @@ class EFA_juxtaposition(tk.Tk):
         
         # Initial message
         self.ld_initial_label = ttk.Label(self.ld_scroll_frame, 
-                                         text="Run 'Convert to Length/Depth' to see results here")
+                                         text="Run 'Flatten and Resample' to see results here")
         self.ld_initial_label.pack(pady=50)
     
     def setup_shifted_data_tab(self):
         """Setup tab 2: Display nfv_df and nhv_df from execute_shift"""
         # Create main container with label
-        ttk.Label(self.shifted_data_frame, text="Horizon Shifted Data", 
+        ttk.Label(self.shifted_data_frame, text="Resampled Data including user-defined horizon shifts (if applied)", 
                  font=('Arial', 12, 'bold')).pack(pady=10)
         
         # Create scrollable container
@@ -572,7 +583,7 @@ class EFA_juxtaposition(tk.Tk):
     def setup_mapped_data_tab(self):
         """Setup tab 3: Display original mapped data from ld_dict"""
         # Create main container with label
-        ttk.Label(self.mapped_data_frame, text="Original Mapped Data", 
+        ttk.Label(self.mapped_data_frame, text="Input data flattened to: Length (along strike) / Depth", 
                  font=('Arial', 12, 'bold')).pack(pady=10)
         
         # Create scrollable container
@@ -581,7 +592,7 @@ class EFA_juxtaposition(tk.Tk):
         
         # Initial message
         self.mapped_initial_label = ttk.Label(self.mapped_scroll_frame, 
-                                             text="Run 'Convert to Length/Depth' to see mapped data here")
+                                             text="Run 'Flatten and Resample' to see mapped data here")
         self.mapped_initial_label.pack(pady=50)
     
     def setup_qc_plot_tab(self):
@@ -610,9 +621,16 @@ class EFA_juxtaposition(tk.Tk):
             for widget in self.qc_plot_frame.winfo_children():
                 widget.destroy()
             
+            # Close only the previous QC figure (being replaced). Using
+            # plt.close('all') here would detach the embedded canvases of the
+            # other plot tabs in newer matplotlib, breaking their pan/zoom.
+            if getattr(self, 'current_qc_fig', None) is not None:
+                plt.close(self.current_qc_fig)
+
             # Generate QC plot figure
             print("Generating QC plot...")
             fig_qc = self.qc_plot_method(title='Quality Control Plot')
+            self.current_qc_fig = fig_qc
             print(f"QC plot generated, figure type: {type(fig_qc)}")
             
             # Create canvas and display in frame
@@ -694,11 +712,11 @@ class EFA_juxtaposition(tk.Tk):
             
             # Display footwall data with styling
             if self.fv_df is not None:
-                create_styled_text_widget(container, self.fv_df, "Footwall Data (FW)")
+                create_styled_text_widget(container, self.fv_df.round(2), "Footwall Data (FW)")
             
             # Display hangingwall data with styling
             if self.hv_df is not None:
-                create_styled_text_widget(container, self.hv_df, "Hanging wall Data (HW)")
+                create_styled_text_widget(container, self.hv_df.round(2), "Hanging wall Data (HW)")
         else:
             ttk.Label(self.ld_scroll_frame, text="No length/depth data available").pack(pady=50)
     
@@ -721,11 +739,11 @@ class EFA_juxtaposition(tk.Tk):
             
             # Display shifted footwall data with styling
             if self.nfv_df is not None:
-                create_styled_text_widget(container, self.nfv_df, "Shifted Footwall Data (FW)")
+                create_styled_text_widget(container, self.nfv_df.round(2), "Shifted Footwall Data (FW)")
             
             # Display shifted hangingwall data with styling
             if self.nhv_df is not None:
-                create_styled_text_widget(container, self.nhv_df, "Shifted Hanging wall Data (HW)")
+                create_styled_text_widget(container, self.nhv_df.round(2), "Shifted Hanging wall Data (HW)")
         else:
             ttk.Label(self.shifted_scroll_frame, text="No shifted data available").pack(pady=50)
     
@@ -734,91 +752,89 @@ class EFA_juxtaposition(tk.Tk):
         # Clear previous widgets
         for widget in self.mapped_scroll_frame.winfo_children():
             widget.destroy()
-        
+
         if self.ld_dict is not None:
-            # Create container for mapped data
-            container = ttk.Frame(self.mapped_scroll_frame)
-            container.pack(fill='both', expand=True)
-            
-            # Create text widget with scrollbars to display ld_dict
-            mapped_frame = ttk.LabelFrame(container, text="Complete ld_dict Contents - All Data")
-            mapped_frame.pack(fill='both', expand=True, padx=5, pady=5)
-            
-            text_frame = ttk.Frame(mapped_frame)
-            text_frame.pack(fill='both', expand=True, padx=5, pady=5)
-            
-            text_widget = tk.Text(text_frame, height=20, wrap=tk.NONE, font=('Courier', 9))
-            scrollbar_y = ttk.Scrollbar(text_frame, orient='vertical', command=text_widget.yview)
-            scrollbar_x = ttk.Scrollbar(text_frame, orient='horizontal', command=text_widget.xview)
-            text_widget.configure(yscrollcommand=scrollbar_y.set, xscrollcommand=scrollbar_x.set)
-            
-            # Recursive function to display all data
-            def format_data_recursive(data, prefix="", level=0):
-                """Recursively format all data types in the dictionary"""
-                result = ""
-                indent = "  " * level
-                
-                if isinstance(data, dict):
-                    result += f"{indent}{prefix}Dictionary with {len(data)} items:\n"
-                    for key, value in data.items():
-                        result += f"{indent}├─ Key: '{key}'\n"
-                        if isinstance(value, pd.DataFrame):
-                            result += f"{indent}│  Type: DataFrame, Shape: {value.shape}\n"
-                            result += f"{indent}│  Columns: {list(value.columns)}\n"
-                            result += f"{indent}│  Data:\n"
-                            # Add DataFrame content with proper indentation
-                            df_lines = value.to_string().split('\n')
-                            for df_line in df_lines:
-                                result += f"{indent}│    {df_line}\n"
-                            result += f"{indent}│\n"
-                        elif isinstance(value, dict):
-                            result += format_data_recursive(value, f"Sub-dictionary '{key}': ", level + 1)
-                        elif isinstance(value, (list, tuple)):
-                            result += f"{indent}│  Type: {type(value).__name__}, Length: {len(value)}\n"
-                            result += f"{indent}│  Contents: {value}\n"
-                        elif isinstance(value, np.ndarray):
-                            result += f"{indent}│  Type: NumPy Array, Shape: {value.shape}, dtype: {value.dtype}\n"
-                            result += f"{indent}│  Data:\n{indent}│    {value}\n"
-                        else:
-                            result += f"{indent}│  Type: {type(value).__name__}\n"
-                            result += f"{indent}│  Value: {value}\n"
-                        result += f"{indent}│\n"
-                elif isinstance(data, pd.DataFrame):
-                    result += f"{indent}{prefix}DataFrame, Shape: {data.shape}\n"
-                    result += f"{indent}Columns: {list(data.columns)}\n"
-                    result += f"{indent}Data:\n"
-                    df_lines = data.to_string().split('\n')
-                    for df_line in df_lines:
-                        result += f"{indent}  {df_line}\n"
-                elif isinstance(data, (list, tuple)):
-                    result += f"{indent}{prefix}{type(data).__name__}, Length: {len(data)}\n"
-                    result += f"{indent}Contents: {data}\n"
-                elif isinstance(data, np.ndarray):
-                    result += f"{indent}{prefix}NumPy Array, Shape: {data.shape}, dtype: {data.dtype}\n"
-                    result += f"{indent}Data:\n{indent}  {data}\n"
-                else:
-                    result += f"{indent}{prefix}{type(data).__name__}: {data}\n"
-                
-                return result
-            
-            # Format ld_dict for display with complete data
-            dict_str = "=== COMPLETE LD_DICT CONTENTS ===\n"
-            dict_str += f"Total top-level keys: {len(self.ld_dict)}\n\n"
-            
-            for i, (key, value) in enumerate(self.ld_dict.items(), 1):
-                dict_str += f"[{i}] TOP-LEVEL KEY: '{key}'\n"
-                dict_str += "=" * 60 + "\n"
-                dict_str += format_data_recursive(value, f"", 0)
-                dict_str += "=" * 60 + "\n\n"
-            
-            text_widget.insert('end', dict_str)
-            text_widget.config(state='disabled')
-            
-            text_widget.grid(row=0, column=0, sticky='nsew')
-            scrollbar_y.grid(row=0, column=1, sticky='ns')
-            scrollbar_x.grid(row=1, column=0, sticky='ew')
-            text_frame.grid_rowconfigure(0, weight=1)
-            text_frame.grid_columnconfigure(0, weight=1)
+            # Build a vertically scrollable canvas inside mapped_scroll_frame
+            canvas = tk.Canvas(self.mapped_scroll_frame, borderwidth=0)
+            scrollbar_y = ttk.Scrollbar(self.mapped_scroll_frame, orient='vertical', command=canvas.yview)
+            canvas.configure(yscrollcommand=scrollbar_y.set)
+
+            scrollbar_y.pack(side='right', fill='y')
+            canvas.pack(side='left', fill='both', expand=True)
+
+            inner_frame = ttk.Frame(canvas)
+            canvas_window = canvas.create_window((0, 0), window=inner_frame, anchor='nw')
+
+            def _on_inner_configure(event):
+                canvas.configure(scrollregion=canvas.bbox('all'))
+
+            def _on_canvas_configure(event):
+                canvas.itemconfig(canvas_window, width=event.width)
+
+            def _on_mousewheel(event):
+                canvas.yview_scroll(int(-1 * (event.delta / 120)), 'units')
+
+            inner_frame.bind('<Configure>', _on_inner_configure)
+            canvas.bind('<Configure>', _on_canvas_configure)
+            canvas.bind_all('<MouseWheel>', _on_mousewheel)
+
+            def _export_tables():
+                export_dir = filedialog.askdirectory(title="Select folder to export CSV files")
+                if not export_dir:
+                    return
+                exported = []
+                for h_name, h_data in self.ld_dict.items():
+                    for s_key, s_suffix in [('fv', 'FW'), ('hv', 'HW')]:
+                        s_data = h_data.get(s_key, {})
+                        lengths = s_data.get('l', [])
+                        depths = s_data.get('d', [])
+                        df = pd.DataFrame({'Length': lengths, 'Depth': depths})
+                        safe_name = "".join(c if c.isalnum() or c in (' ', '_', '-') else '_' for c in h_name).strip()
+                        filename = os.path.join(export_dir, f"{safe_name}_{s_suffix}.csv")
+                        df.to_csv(filename, index=False)
+                        exported.append(os.path.basename(filename))
+                if exported:
+                    messagebox.showinfo("Export Complete",
+                        f"Exported {len(exported)} file(s) to:\n{export_dir}\n\n" + "\n".join(exported))
+
+            btn_frame = ttk.Frame(inner_frame)
+            btn_frame.pack(fill='x', padx=5, pady=(5, 0))
+            ttk.Button(btn_frame, text="Export Tables to CSV", command=_export_tables).pack(side='right')
+
+            def _fmt(v):
+                try:
+                    return f"{float(v):.2f}"
+                except (TypeError, ValueError):
+                    return str(v)
+
+            # One LabelFrame per horizon, with FW and HW tables side by side
+            for horizon_name, horizon_data in self.ld_dict.items():
+                horizon_frame = ttk.LabelFrame(inner_frame, text=f"Horizon: {horizon_name}")
+                horizon_frame.pack(fill='x', expand=False, padx=5, pady=5)
+
+                for side_key, side_label in [('fv', 'Footwall (FW)'), ('hv', 'Hangingwall (HW)')]:
+                    side_data = horizon_data.get(side_key, {})
+                    lengths = side_data.get('l', [])
+                    depths = side_data.get('d', [])
+
+                    side_frame = ttk.LabelFrame(horizon_frame, text=side_label)
+                    side_frame.pack(side='left', fill='both', expand=True, padx=5, pady=5)
+
+                    cols = ('Length', 'Depth')
+                    tree = ttk.Treeview(side_frame, columns=cols, show='headings', height=8)
+                    for col in cols:
+                        tree.heading(col, text=col)
+                        tree.column(col, width=110, anchor='center')
+
+                    for l_val, d_val in zip(lengths, depths):
+                        tree.insert('', 'end', values=(_fmt(l_val), _fmt(d_val)))
+
+                    sb = ttk.Scrollbar(side_frame, orient='vertical', command=tree.yview)
+                    tree.configure(yscrollcommand=sb.set)
+                    tree.grid(row=0, column=0, sticky='nsew')
+                    sb.grid(row=0, column=1, sticky='ns')
+                    side_frame.grid_rowconfigure(0, weight=1)
+                    side_frame.grid_columnconfigure(0, weight=1)
         else:
             ttk.Label(self.mapped_scroll_frame, text="No mapped data available").pack(pady=50)
     
@@ -1656,8 +1672,11 @@ class EFA_juxtaposition(tk.Tk):
         except:
             pass
         
-        # Close any existing figures to prevent memory leaks
-        plt.close('all')
+        # Close only this tab's previous figure (being replaced). A global
+        # plt.close('all') detaches the embedded canvases of the other plot
+        # tabs in newer matplotlib, which breaks their pan/zoom toolbar.
+        if getattr(self, 'current_throw_fig', None) is not None:
+            plt.close(self.current_throw_fig)
         
         try:
             fig4, self.throwrange_df, self.throwarray = self.throw_plot_method()
@@ -1768,8 +1787,10 @@ class EFA_juxtaposition(tk.Tk):
         except:
             pass
         
-        # Close any existing figures to prevent memory leaks
-        plt.close('all')
+        # Close only this tab's previous figure (being replaced); see note in
+        # setup_throw_profile_plot about why plt.close('all') is avoided.
+        if getattr(self, 'current_juxt_unit_fig', None) is not None:
+            plt.close(self.current_juxt_unit_fig)
         
         try:
             fig_unit = self.zone_unit_plot_method()
@@ -1809,7 +1830,7 @@ class EFA_juxtaposition(tk.Tk):
     
     def update_juxtaposition_unit_plot(self):
         """Update juxtaposition unit plot when checkboxes change"""
-        if hasattr(self, 'zone_unit_colors') and self.zone_unit_colors:
+        if hasattr(self, 'ezcolor_df') and self.ezcolor_df is not None:
             self.setup_juxtaposition_unit_plot()
             # Update legend as well
             if hasattr(self, 'legend_sidebar_juxt_unit') and hasattr(self, 'ecolor_df'):
@@ -1883,8 +1904,10 @@ class EFA_juxtaposition(tk.Tk):
         except:
             pass
         
-        # Close any existing figures to prevent memory leaks
-        plt.close('all')
+        # Close only this tab's previous figure (being replaced); see note in
+        # setup_throw_profile_plot about why plt.close('all') is avoided.
+        if getattr(self, 'current_juxt_fig', None) is not None:
+            plt.close(self.current_juxt_fig)
         
         try:
             fig2 = self.zone_color_plot_method()
@@ -2010,8 +2033,10 @@ class EFA_juxtaposition(tk.Tk):
         except:
             pass
         
-        # Close any existing figures to prevent memory leaks
-        plt.close('all')
+        # Close only this tab's previous figure (being replaced); see note in
+        # setup_throw_profile_plot about why plt.close('all') is avoided.
+        if getattr(self, 'current_scenario_fig', None) is not None:
+            plt.close(self.current_scenario_fig)
         
         try:
             fig3, self.juxtlist, warning = self.zone_juxtscenario_plot_method()
@@ -2145,8 +2170,12 @@ class EFA_juxtaposition(tk.Tk):
             except:
                 pass
             
-            # Close any existing legend figures to prevent memory leaks
-            plt.close('all')
+            # Close only this sidebar's previous legend figure (being replaced).
+            # A global plt.close('all') would detach the embedded canvases of the
+            # plot tabs in newer matplotlib, breaking their pan/zoom toolbar.
+            prev_legend_fig = self._legend_figs.get(legend_method)
+            if prev_legend_fig is not None:
+                plt.close(prev_legend_fig)
             
             ttk.Label(sidebar, text="Legend", font=('Arial', 12, 'bold')).pack(pady=10)
             
@@ -2169,6 +2198,9 @@ class EFA_juxtaposition(tk.Tk):
                     
                     # Store reference for clipboard functionality
                     self.current_legend_fig = legend_fig
+                    # Track per-sidebar so it can be closed on the next refresh
+                    # without using a global plt.close('all').
+                    self._legend_figs[legend_method] = legend_fig
                     
                     # Create frame for legend and copy button
                     legend_frame = ttk.Frame(sidebar)
@@ -2256,8 +2288,8 @@ class EFA_juxtaposition(tk.Tk):
         
         self.tables_notebook.add(self.throw_stats_frame, text='Throw Statistics')
         self.tables_notebook.add(self.juxt_scenarios_frame, text='Juxtaposition Scenarios')
-        self.tables_notebook.add(self.footwall_frame, text='Foot-wall Data')
-        self.tables_notebook.add(self.hangingwall_frame, text='Hanging-wall Data')
+        self.tables_notebook.add(self.footwall_frame, text='Footwall Data')
+        self.tables_notebook.add(self.hangingwall_frame, text='Hangingwall Data')
         
         # Create button frame for export buttons
         button_frame = ttk.Frame(self.output_tables_frame)
@@ -2275,8 +2307,8 @@ class EFA_juxtaposition(tk.Tk):
             
             self.create_table_display(self.throw_stats_frame, self.throwrange_df, "Horizon Throw Statistics")
             self.create_juxtaposition_table(self.juxt_scenarios_frame, self.juxt_df, "Juxtaposition Scenarios")
-            self.create_table_display(self.footwall_frame, self.nfv_df, "Foot-wall Data")
-            self.create_table_display(self.hangingwall_frame, self.nhv_df, "Hanging-wall Data")
+            self.create_table_display(self.footwall_frame, self.nfv_df.round(2), "Footwall Data")
+            self.create_table_display(self.hangingwall_frame, self.nhv_df.round(2), "Hangingwall Data")
     
     def get_juxtaposition_color(self, fv_lith, hv_lith):
         """Get the background color for a juxtaposition scenario based on lithology types"""
@@ -2588,6 +2620,8 @@ class EFA_juxtaposition(tk.Tk):
             self.current_juxt_unit_fig = None
             self.current_scenario_fig = None
             self.current_legend_fig = None
+            self.current_qc_fig = None
+            self._legend_figs = {}
             
             # Clear all tabs - check if attributes exist first and handle errors gracefully
             # Clear Data Input tab (data_display_frame)
@@ -4251,25 +4285,29 @@ Key Concepts:
 • Fault Contact points (FC points): The Footwall and haning wall intersection points between a seismic horizon and the fault plane""")
         
         # Add fault diagram image
-        self._add_help_image(frame, self.get_resource_path('fault_diagram.png'), 
+        self._add_help_image(frame, self.get_resource_path('fig1.png'), 
                              caption="Figure 1: Relationship between footwall, hanging wall, fault plane, and fault contact points")
         
         # Add ada load image
-        self._add_help_image(frame, self.get_resource_path('example_datainput.png'), 
+        self._add_help_image(frame, self.get_resource_path('fig2.png'), 
                              caption="Figure 2: Example of data import and preview")
 
         # Section 2: Loading Data
         self._add_help_section(frame, "2. Data Input", heading_font, body_font,
-            """Step 1: Select input file format:
-• Petrel fault contact points, converted to points and exported as Petrel points with attributes format - recomended format
-• Cegal fault contact points, converted to points and exported as Petrel points with attributes format
+            """Step 1: Petrel workflow and data export:
+• Map fault-horizon intersection points for a single fault using the Petrel tool “Map Fault Contact Points”.
+• Both footwall and hanging wall intersection points are mapped to the same file.
+• Create a new fault contact point file for each horizon to be analyzed.
+• Convert the mapped fault contact points to Petrel point files.
+• Optional: Depth convert the points if the intersection points are mapped on time data. 
+• Export the points in “Petrel points with attributes” format.
 
 Step 2: Select input fault contact files and set correct order:
-• Click 'Select Horizon Files' button
-• In the file dialog, select one or several fault contact point files in the chosen format
-• Each file must contain both footwall and hanging wall cut-off points for one seismic horizon
+• Click 'Select Fault Contacts' button
+• In the file dialog, select one or several fault contact point files.
+• Each file must contain both footwall and hanging wall cut-off points for one seismic horizon and one fault.
 • Files will appear in the 'selected files' listbox
-• If files are not in the correct order (from shallow to deep), click 'Sort File Order' and use buttons to move files up or down in the list
+• If files are not in the correct order (stratigraphic order from shallow to deep), click 'Sort File Order' and use buttons to move files up or down in the list
 
 Step 3: Load data to database
 • Click 'Load Data to Database' button
@@ -4279,8 +4317,8 @@ Step 3: Load data to database
    
 
         # Add qc plot image
-        self._add_help_image(frame, self.get_resource_path('example_qcplot.png'), 
-                             caption="Figure 3: Example QC plot tab, where throw and juxtaposition of mapped points can be evaluated")
+        self._add_help_image(frame, self.get_resource_path('fig3.png'), 
+                             caption="Figure 3: Example of the Data Manipulation tab, showing the transformed  2D representation of the fault contact points.")
         
         # Section 3: Data conversion and horizon shift
         self._add_help_section(frame, "3. Data Manipulation", heading_font, body_font,
@@ -4291,12 +4329,12 @@ Step 1: Select Z-value field
 • TWT auto = Two Way Time (ms), only appers in dataset if data has been depth converted
 • Depth 1 = Depth in meters or feet, only appers in dataset if data has been depth converted
 
-Step 2: Click 'Convert to Length/Depth'
-• Algorithm converts the mapped 2D fault contact points to a 2D coordinate system represented by length along fault strike and depth
-• Projects 3D points onto 2D fault plane
-• Resamples the data to equal spacing along fault strike.
-• Separates footwall and hangingwall data
-• The converted data will appear in the 'Length/Depth Data Preview' window
+Step 2: Click 'Flatten and Resample'
+• Algorithm converts the mapped 3D fault contact points to a 2D coordinate system represented by length along fault strike and depth
+• Flattended data tab: displays input data in 2D representation, with length along fault strike on the x-axis and depth on the y-axis
+• Resampled data tab: displays the flattended input data resampled to a regular length interval (10 meters) along the fault strike. The resampled data is used for subsequent juxtaposition analysis.
+• Shifted data tab: displays the resampled data after executing horizon shifts (if any) under step 3.
+• QC Plot tab: displays a QC plot of the flattened and resampled data, showing both fault mapped fault juxtaposition in addition to fault throw along strike.
 • QC the data to ensure datapoints are in the correct order. Red data points indicate data out of order, theese data will be truncated when executing horizon shift.
 • The QC plot, in the 'QC Plot' tab, can also be used to verify data quality and order. It shows both fault maped fault juxtaposition in addition to fault throw along strike.
 
@@ -4323,14 +4361,14 @@ Step 4: click 'Execute Shift'
         
         
         # Horizon shift concept figure
-        self._add_help_image(frame, self.get_resource_path('example_HorizonShift.png'),
+        self._add_help_image(frame, self.get_resource_path('fig4.png'),
                            caption="Figure 4: Example of Horizon Shift Table in the application")
         
         # Horizon shift concept figure
-        self._add_help_image(frame, self.get_resource_path('example_Horizon_Shift_Concept.png'),
+        self._add_help_image(frame, self.get_resource_path('fig5.png'),
                            caption="Figure 5: Conceptual illustration of using a stratigraphic log to define horizon shifts of h1 and h4")
 
-        self._add_help_image(frame, self.get_resource_path('example_shift_datatab.png'),
+        self._add_help_image(frame, self.get_resource_path('fig6.png'),
                            caption="Figure 6: Example of shifted horizons displayed in the 'Shifted Data' tab")
 
 
@@ -4358,7 +4396,7 @@ Step 4: click 'Generate All Plots'
 
 
         # Add plot settings image
-        self._add_help_image(frame, self.get_resource_path('example_plot_settings.png'), 
+        self._add_help_image(frame, self.get_resource_path('fig7.png'), 
                              caption="Figure 7: Example of data import and preview")
 
         self._add_help_section(frame, "5. Plot Types", heading_font, body_font,
@@ -4371,7 +4409,7 @@ Step 4: click 'Generate All Plots'
 
 
         # Add plot settings image
-        self._add_help_image(frame, self.get_resource_path('example_throw_plot.png'), 
+        self._add_help_image(frame, self.get_resource_path('fig8.png'), 
                              caption="Figure 8: Example of throw profile plot")
 
         self._add_help_section(frame, "6. Throw Plot", heading_font, body_font,
@@ -4385,7 +4423,7 @@ The throw profile plot is displayed in the 'Throw Plot' tab:
 • Note! If a horizon is shifted, the throw will be the same as the original horizon, unless truncated. If a horizon color is missing, it might thus be behind another one.""")
 
         # Add plot settings image
-        self._add_help_image(frame, self.get_resource_path('example_zone_juxtaposition_plot.png'), 
+        self._add_help_image(frame, self.get_resource_path('fig9.png'), 
                              caption="Figure 9: Example of zone juxtaposition plot")
 
         self._add_help_section(frame, "7. Zone Juxtaposition Plot", heading_font, body_font,
@@ -4399,7 +4437,7 @@ The Zone Juxtaposition Plot is displayed in the 'Zone Juxtaposition Plot' tab:
 • Hangingwall horizons: Dashed lines with ▼ markers""")
 
         # Add plot settings image
-        self._add_help_image(frame, self.get_resource_path('example_lithology_juxtaposition_plot.png'), 
+        self._add_help_image(frame, self.get_resource_path('fig10.png'), 
                              caption="Figure 10: Example of lithology juxtaposition plot")
 
         self._add_help_section(frame, "8. Lithology Juxtaposition Plot", heading_font, body_font,
@@ -4413,7 +4451,7 @@ Lithology Juxtaposition Plot:
 
 
         # Add plot settings image
-        self._add_help_image(frame, self.get_resource_path('example_juxtaposition_scenario_plot.png'), 
+        self._add_help_image(frame, self.get_resource_path('fig11.png'), 
                              caption="Figure 11: Example of juxtaposition scenario plot")
 
         self._add_help_section(frame, "9. Juxtaposition Scenario Plot", heading_font, body_font,
@@ -4427,7 +4465,7 @@ Juxtaposition Scenario Plot:
 • Apex IDs correspond to Juxtaposition Scenarios entered in the 'Output tables' tab""")
         
         # Add example juxtaposition plot image
-        self._add_help_image(frame, self.get_resource_path('example_output_tables.png'),
+        self._add_help_image(frame, self.get_resource_path('fig12.png'),
                            caption="Figure 12: Example juxtaposition plot showing footwall and hanging wall horizons")
         
         
