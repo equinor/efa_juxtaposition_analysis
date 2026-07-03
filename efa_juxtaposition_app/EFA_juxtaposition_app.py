@@ -64,7 +64,7 @@ except ImportError:
 
 class EFA_juxtaposition(tk.Tk):
     VERSION = "1.0.2"
-    BUILD_DATE = "2026-06-22"
+    BUILD_DATE = "2026-07-03"
     AUTHOR = "John-Are Hansen"
 
     def __init__(self):
