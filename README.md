@@ -4,7 +4,7 @@ Fault juxtaposition analysis for single faults using throw profiles and juxtapos
 
 ## Features
 
-- Input Petrel Fault cuttof points or Cegal fault cuttof points in Petrel points with attribute format
+- Input Petrel Fault cuttof in Petrel points with attribute format
 - Single to multiple horizon input
 - Supports horizon shifting
 - Generates interactive throw profiles and juxtaposition diagrams
