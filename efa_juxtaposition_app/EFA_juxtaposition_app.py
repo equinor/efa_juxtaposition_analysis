@@ -52,6 +52,7 @@ import pickle
 from PIL import Image, ImageTk
 import io
 import os
+import argparse
 
 # Optional Windows clipboard support
 try:
@@ -67,8 +68,10 @@ class EFA_juxtaposition(tk.Tk):
     BUILD_DATE = "2026-07-03"
     AUTHOR = "John-Are Hansen"
 
-    def __init__(self):
+    def __init__(self, initialdir=None):
         super().__init__()
+        self.initialdir = initialdir
+        print(f"Starting EFA Juxtaposition Analysis App with initialdir={self.initialdir}")
         
         # Set up path to help_images folder relative to this script
         self.script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -320,7 +323,8 @@ class EFA_juxtaposition(tk.Tk):
         """Enhanced file selection from juxtaposition_app"""
         file_paths = filedialog.askopenfilenames(
             title="Select Horizon Data Files",
-            filetypes=(("All Files", "*.*"), ("CSV Files", "*.csv"), ("Text Files", "*.txt"))
+            filetypes=(("All Files", "*.*"), ("CSV Files", "*.csv"), ("Text Files", "*.txt")),
+            initialdir=self.initialdir
         )
         for file_path in file_paths:
             self.innfiles.append(file_path)
@@ -2439,7 +2443,7 @@ class EFA_juxtaposition(tk.Tk):
             messagebox.showwarning("Warning", "No data to export! Please generate plots first.")
             return
         
-        directory = filedialog.askdirectory(title="Select directory to save CSV files")
+        directory = filedialog.askdirectory(title="Select directory to save CSV files", initialdir=self.initialdir)
         if not directory:
             return
         
@@ -2465,7 +2469,8 @@ class EFA_juxtaposition(tk.Tk):
             title="Save Excel File",
             defaultextension=".xlsx",
             filetypes=[("Excel files", "*.xlsx"), ("All files", "*.*")],
-            initialfile="efa_analysis_tables.xlsx"
+            initialfile="efa_analysis_tables.xlsx",
+            initialdir=self.initialdir
         )
         
         if not file_path:
@@ -2816,7 +2821,8 @@ class EFA_juxtaposition(tk.Tk):
         file_path = filedialog.asksaveasfilename(
             title="Save Session",
             defaultextension=".pkl",
-            filetypes=[("Pickle files", "*.pkl"), ("All files", "*.*")]
+            filetypes=[("Pickle files", "*.pkl"), ("All files", "*.*")],
+            initialdir=self.initialdir
         )
         
         if not file_path:
@@ -2938,7 +2944,8 @@ class EFA_juxtaposition(tk.Tk):
         """Load a complete application session from a pickle file using file dialog"""
         file_path = filedialog.askopenfilename(
             title="Load Session",
-            filetypes=[("Pickle files", "*.pkl"), ("All files", "*.*")]
+            filetypes=[("Pickle files", "*.pkl"), ("All files", "*.*")],
+            initialdir=self.initialdir
         )
         
         if not file_path:
@@ -3270,7 +3277,7 @@ class EFA_juxtaposition(tk.Tk):
         import os
         
         # Ask user to select directory
-        save_dir = filedialog.askdirectory(title="Select directory to save all plots")
+        save_dir = filedialog.askdirectory(title="Select directory to save all plots", initialdir=self.initialdir)
         if not save_dir:
             return
         
@@ -5420,7 +5427,14 @@ def interpolate_throw(fv_df, juxt_df, throwarray, h_color=None):
 
 
 def main():
-    app = EFA_juxtaposition()
+    parser = argparse.ArgumentParser(description="EFA Juxtaposition Analysis")
+    parser.add_argument(
+        "--initialdir",
+        default=None,
+        help="Initial directory for file dialogs"
+    )
+    args = parser.parse_args()
+    app = EFA_juxtaposition(initialdir=args.initialdir)
     app.mainloop()
 
 
